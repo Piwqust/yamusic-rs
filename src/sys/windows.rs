@@ -375,3 +375,16 @@ pub fn copy_text(text: &str) {
         let _ = child.wait();
     }
 }
+
+/// Сколько логических пикселей даёт щелчок колёсика. Как у Chromium оригинала: 100/3 px
+/// на строку, строк за щелчок — из настройки Windows (по умолчанию 3, то есть 100 px).
+/// Slint без этого берёт 60 px на щелчок, и прокрутка выходит мельче оригинальной.
+pub fn wheel_px_per_notch() -> f32 {
+    let mut lines: u32 = 3;
+    let ok = unsafe { SystemParametersInfoW(SPI_GETWHEELSCROLLLINES, 0, &mut lines as *mut u32 as *mut c_void, 0) } != 0;
+    // WHEEL_PAGESCROLL («на один экран») Chromium считает отдельно; здесь — как по умолчанию.
+    if !ok || lines == u32::MAX {
+        lines = 3;
+    }
+    lines as f32 * 100.0 / 3.0
+}

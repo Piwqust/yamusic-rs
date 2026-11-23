@@ -1,7 +1,7 @@
 // Лендинги по скелету сервера: «Для вас и Тренды», «Концерты», «Книги и подкасты», «Чарт».
 
 import { Theme } from "theme.slint";
-import { Icons, Icon, Cover, Pic, Shimmer, ExplicitMark, NavCircle } from "widgets.slint";
+import { Icons, Icon, Cover, Pic, Shimmer, ExplicitMark, NavCircle, ScrollBar } from "widgets.slint";
 import { T, App, LBlock, LCard, LTab, ChartRow, TrackItem } from "state.slint";
 import { TrackRow, ChartLine } from "rows.slint";
 import { CarouselArrow } from "shelf.slint";
@@ -1135,6 +1135,14 @@ export component LandingPage inherits Rectangle {
         }
         }
     }
+    ScrollBar {
+        x: flick.x;
+        y: flick.y;
+        width: flick.width;
+        height: flick.height;
+        content-y <=> flick.content-y;
+        content-height: flick.content-height;
+    }
 
     // При прокрутке сверху остаются маленькие вкладки или заголовок на полупрозрачном фоне.
     property <bool> sticky: -flick.content-y > 110px;
@@ -1216,6 +1224,14 @@ export component ChartPage inherits Rectangle {
             height: 10 * 56px;
             for i in 10: Shimmer { x: root.pad + 44px; y: i * 56px + 8px; width: 40px; height: 40px; border-radius: Theme.radius-size-s; }
         }
+    }
+    ScrollBar {
+        x: flick.x;
+        y: flick.y;
+        width: flick.width;
+        height: flick.height;
+        content-y <=> flick.content-y;
+        content-height: flick.content-height;
     }
     property <bool> sticky: -flick.content-y > 40px;
     Rectangle {

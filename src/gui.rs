@@ -1244,7 +1244,6 @@ fn full_repaint(ui: &AppWindow) {
     });
 }
 
-#[cfg(target_os = "linux")]
 thread_local! {
     static LAST_CURSOR: std::cell::Cell<slint::LogicalPosition> = const { std::cell::Cell::new(slint::LogicalPosition::new(0.0, 0.0)) };
 }
@@ -2167,11 +2166,22 @@ pub fn run(start_hidden: bool) -> Result<(), slint::PlatformError> {
         use slint::winit_030::EventResult;
         use winit::event::{ElementState, MouseButton, WindowEvent};
         match ev {
-            #[cfg(target_os = "linux")]
             WindowEvent::CursorMoved { position, .. } => {
                 let p = position.to_logical::<f32>(_w.scale_factor() as f64);
                 LAST_CURSOR.set(slint::LogicalPosition::new(p.x, p.y));
                 EventResult::Propagate
+            }
+            // Щелчок колёсика — столько пикселей, сколько дал бы Chromium оригинала.
+            // Тачпад присылает пиксели (PixelDelta), их Slint передаёт как есть.
+            #[cfg(windows)]
+            WindowEvent::MouseWheel { delta: winit::event::MouseScrollDelta::LineDelta(lx, ly), .. } => {
+                let k = sys::wheel_px_per_notch();
+                _w.dispatch_event(slint::platform::WindowEvent::PointerScrolled {
+                    position: LAST_CURSOR.get(),
+                    delta_x: lx * k,
+                    delta_y: ly * k,
+                });
+                EventResult::PreventDefault
             }
             WindowEvent::MouseInput { state: ElementState::Pressed, button: MouseButton::Back, .. } => {
                 with_ctx(|c| c.go_back());

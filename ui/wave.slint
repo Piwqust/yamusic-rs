@@ -340,8 +340,8 @@ export component WavePage inherits Rectangle {
 
         wheel-input := TouchArea {
             scroll-event(e) => {
-                // В Windows щелчок колёсика даёт 60 px в Slint и 30 px в оригинале (100 × 0,3).
-                wheel.move-to(wheel.offset - e.delta-y * 0.5 / wheel.slide-h, false);
+                // Колёсо вайбов проходит 0,3 от прокрутки (100 px на щелчок — 30 px), как в оригинале.
+                wheel.move-to(wheel.offset - e.delta-y * 0.3 / wheel.slide-h, false);
                 accept
             }
             for k in (wheel.n > 0 ? wheel.slot-count : 0): WheelSlot {

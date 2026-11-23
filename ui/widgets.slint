@@ -577,3 +577,66 @@ export component Fade inherits Rectangle {
         @children
     }
 }
+
+// Полоса прокрутки поверх страницы — `OverlayScrollbar` оригинала. Ставится рядом с Flickable
+// на его место, `content-y` связывается с ним в обе стороны. Бегунок 8 px со скруглением,
+// отступ 8 px от краёв, не короче 50 px. Виден, пока страница прокручивается, и гаснет через
+// секунду после остановки (`useScroll`: debounce 1 с), появляется и гаснет за 0,2 с ease-in-out.
+// Бегунок можно тянуть. У оригинала он прозрачный, а цвет даёт `backdrop-filter: invert(0.3)`
+// (под курсором 0,4); на тёмном фоне это около 30% и 40% белого.
+export component ScrollBar inherits Rectangle {
+    in-out property <length> content-y;
+    in property <length> content-height;
+    property <length> pad: 8px;
+    property <length> track: root.height - 2 * pad;
+    property <length> range: max(0px, content-height - root.height);
+    property <length> size: max(50px, track * min(1, root.height / max(1px, content-height)));
+    property <float> value: range > 0 ? max(0, min(1, -content-y / range)) : 0;
+    property <bool> scrolling;
+    property <bool> dragging: thumb-ta.pressed;
+    property <float> shown: range > 0 && (scrolling || dragging) ? 1 : 0;
+    animate shown { duration: App.motion ? 200ms : 0ms; easing: ease-in-out; }
+    changed content-y => {
+        root.scrolling = true;
+        // `restart()` не запускает остановленный таймер: сначала включаем, потом отсчёт заново.
+        idle.running = true;
+        idle.restart();
+    }
+    idle := Timer {
+        interval: 1s;
+        running: false;
+        triggered => {
+            self.running = false;
+            root.scrolling = false;
+        }
+    }
+
+    thumb := Rectangle {
+        x: root.width - root.pad - self.width;
+        y: root.pad + (root.track - root.size) * root.value;
+        width: 8px;
+        height: root.size;
+        border-radius: 4px;
+        visible: root.shown > 0;
+        property <bool> hot: thumb-ta.has-hover || root.dragging;
+        background: (Theme.dark ? #ffffff : #000000).with-alpha((self.hot ? 0.4 : 0.3) * root.shown);
+        animate background { duration: App.motion ? 200ms : 0ms; easing: ease-in-out; }
+        property <length> grab-y;
+        property <float> grab-value;
+        thumb-ta := TouchArea {
+            enabled: root.shown > 0;
+            pointer-event(e) => {
+                if e.button == PointerEventButton.left && e.kind == PointerEventKind.down {
+                    thumb.grab-y = self.absolute-position.y + self.mouse-y;
+                    thumb.grab-value = root.value;
+                }
+            }
+            moved => {
+                if self.pressed && root.track > root.size {
+                    root.content-y = -root.range * max(0, min(1, thumb.grab-value
+                        + (self.absolute-position.y + self.mouse-y - thumb.grab-y) / (root.track - root.size)));
+                }
+            }
+        }
+    }
+}

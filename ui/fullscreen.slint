@@ -1,7 +1,7 @@
 // Полноэкранный плеер: обложка, очередь и синхронный текст песни.
 
 import { Theme } from "theme.slint";
-import { Icons, Icon, Cover, ArtistLinks, ExplicitMark } from "widgets.slint";
+import { Icons, Icon, Cover, ArtistLinks, ExplicitMark, ScrollBar } from "widgets.slint";
 import { T, App, TrackItem } from "state.slint";
 
 component RoundButton inherits Rectangle {
@@ -479,61 +479,68 @@ export component FullscreenPlayer inherits Rectangle {
     }
 
     // Очередь: «Сейчас играет …», текущий трек, «Далее в очереди».
-    if App.fs-mode == 1: Flickable {
+    // Очередь в обёртке: рядом с ней — полоса прокрутки.
+    if App.fs-mode == 1: Rectangle {
         x: root.width / 2 - 35px;
         y: py;
         width: root.width - self.x - 52px;
         height: root.height - py - 40px;
-        content-height: 152px + App.queue.length * 56px + 40px;
-        Text {
-            x: 0;
-            y: 0;
-            text: T.t("Сейчас играет ") + App.queue-header;
-            font-size: Theme.font-size-label-m;
-            font-weight: 500;
-            color: #ffffff;
+        queue-flick := Flickable {
+            content-height: 152px + App.queue.length * 56px + 40px;
+            Text {
+                x: 0;
+                y: 0;
+                text: T.t("Сейчас играет ") + App.queue-header;
+                font-size: Theme.font-size-label-m;
+                font-weight: 500;
+                color: #ffffff;
+            }
+            Text {
+                x: 0;
+                y: 20px;
+                width: parent.width;
+                text: App.queue-title;
+                overflow: elide;
+                font-family: "YS Music Headline";
+                font-size: Theme.font-size-headline-m;
+                font-weight: 700;
+                color: #ffffff;
+            }
+            QueueRow {
+                x: 0;
+                y: 70px;
+                width: parent.width;
+                current: true;
+                item: {
+                    title: App.title,
+                    version: App.track-version,
+                    artists: App.artists,
+                    duration: App.format-time(App.duration),
+                    cover: App.cover,
+                    explicit: App.track-explicit,
+                    available: true,
+                };
+                clicked => { App.play-pause(); }
+            }
+            if App.queue.length > 0: Text {
+                x: 0;
+                y: 152px;
+                text: T.t("Далее в очереди");
+                font-size: Theme.font-size-label-m;
+                font-weight: 500;
+                color: #ffffff;
+            }
+            for q[i] in App.queue: QueueRow {
+                x: 0;
+                y: 180px + i * 56px;
+                width: parent.width;
+                item: q;
+                clicked => { App.jump-queue(i); }
+            }
         }
-        Text {
-            x: 0;
-            y: 20px;
-            width: parent.width;
-            text: App.queue-title;
-            overflow: elide;
-            font-family: "YS Music Headline";
-            font-size: Theme.font-size-headline-m;
-            font-weight: 700;
-            color: #ffffff;
-        }
-        QueueRow {
-            x: 0;
-            y: 70px;
-            width: parent.width;
-            current: true;
-            item: {
-                title: App.title,
-                version: App.track-version,
-                artists: App.artists,
-                duration: App.format-time(App.duration),
-                cover: App.cover,
-                explicit: App.track-explicit,
-                available: true,
-            };
-            clicked => { App.play-pause(); }
-        }
-        if App.queue.length > 0: Text {
-            x: 0;
-            y: 152px;
-            text: T.t("Далее в очереди");
-            font-size: Theme.font-size-label-m;
-            font-weight: 500;
-            color: #ffffff;
-        }
-        for q[i] in App.queue: QueueRow {
-            x: 0;
-            y: 180px + i * 56px;
-            width: parent.width;
-            item: q;
-            clicked => { App.jump-queue(i); }
+        ScrollBar {
+            content-y <=> queue-flick.content-y;
+            content-height: queue-flick.content-height;
         }
     }
 

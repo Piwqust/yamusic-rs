@@ -1,7 +1,7 @@
 // Поиск: вкладки «Популярное» и «История», результаты по типам.
 
 import { Theme } from "theme.slint";
-import { Icons, Icon, Cover, Shimmer, NavArrows, Field } from "widgets.slint";
+import { Icons, Icon, Cover, Shimmer, NavArrows, Field, ScrollBar } from "widgets.slint";
 import { T, App, ChartRow } from "state.slint";
 import { TrackRow, BlockHeader, Tab, ChartLine } from "rows.slint";
 import { Shelf, CarouselArrow } from "shelf.slint";
@@ -109,6 +109,14 @@ export component SearchPage inherits Rectangle {
                 Shelf { title: T.t("Плейлисты"); block: "sr-playlists"; items: App.sr-playlists; size: 186px; arrows: false; }
             }
         }
+    }
+    ScrollBar {
+        x: flick.x;
+        y: flick.y;
+        width: flick.width;
+        height: flick.height;
+        content-y <=> flick.content-y;
+        content-height: flick.content-height;
     }
 
     // Шапка: поле поиска и вкладки. Остаётся на месте при прокрутке.

@@ -1,7 +1,7 @@
 // Страница исполнителя.
 
 import { Theme } from "theme.slint";
-import { Icons, Icon, Cover, Shimmer, NavArrows } from "widgets.slint";
+import { Icons, Icon, Cover, Shimmer, NavArrows, ScrollBar } from "widgets.slint";
 import { T, App } from "state.slint";
 import { TrackRow, BlockHeader } from "rows.slint";
 import { Shelf } from "shelf.slint";
@@ -238,6 +238,14 @@ export component ArtistPage inherits Rectangle {
             Shelf { title: T.t("Сборники"); block: "ar-compilations"; items: App.ar-compilations; }
             Shelf { title: T.t("Похожие исполнители"); block: "ar-similar"; items: App.ar-similar; }
         }
+    }
+    ScrollBar {
+        x: flick.x;
+        y: flick.y;
+        width: flick.width;
+        height: flick.height;
+        content-y <=> flick.content-y;
+        content-height: flick.content-height;
     }
 
     // Шапка при прокрутке: стрелки и имя исполнителя.

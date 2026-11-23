@@ -1,7 +1,7 @@
 // История прослушиваний: сверху вкладки дней, ниже по дням — откуда слушали и треки.
 
 import { Theme } from "theme.slint";
-import { Icons, Icon, Cover, Pic, Shimmer, NavCircle } from "widgets.slint";
+import { Icons, Icon, Cover, Pic, Shimmer, NavCircle, ScrollBar } from "widgets.slint";
 import { T, App, HistRow } from "state.slint";
 import { TrackRow, AlbumTrackRow } from "rows.slint";
 import { CarouselArrow } from "shelf.slint";
@@ -153,6 +153,14 @@ export component HistoryPage inherits Rectangle {
             Shimmer { x: root.pad; y: 0; width: 260px; height: 26px; border-radius: Theme.radius-size-s; }
             for i in 8: Shimmer { x: root.pad; y: 52px + i * 56px; width: 40px; height: 40px; border-radius: Theme.radius-size-s; }
         }
+    }
+    ScrollBar {
+        x: flick.x;
+        y: flick.y;
+        width: flick.width;
+        height: flick.height;
+        content-y <=> flick.content-y;
+        content-height: flick.content-height;
     }
 
     NavCircle {
