@@ -43,10 +43,12 @@ component CaptionButton inherits Rectangle {
         stroke: ink; stroke-width: 1px;
         viewbox-width: 10; viewbox-height: 10;
     }
+    // Мини-плеер: скруглённое окно, в углу — плашка. Рамкой, а не контуром Path: у рамки
+    // край чёткий, как у соседнего «развернуть».
     if kind == 3: Rectangle {
-        width: 10px; height: 8px;
-        border-width: 1px; border-color: ink; border-radius: 1px;
-        Rectangle { x: 4px; y: 3px; width: 4px; height: 3px; background: ink; }
+        width: 12px; height: 10px;
+        border-width: 1px; border-color: ink; border-radius: 2px;
+        Rectangle { x: 5px; y: 4px; width: 5px; height: 4px; border-radius: 1px; background: ink; }
     }
     if kind == 2: Path {
         width: 10px; height: 10px;
@@ -75,8 +77,8 @@ export component AppWindow inherits Window {
     always-on-top: App.mini;
     preferred-width: 1280px;
     preferred-height: 800px;
-    min-width: App.mini ? 320px : 960px;
-    min-height: App.mini ? 88px : 640px;
+    min-width: App.mini ? 400px : 960px;
+    min-height: App.mini ? 112px : 640px;
     default-font-family: "YS Text";
     default-font-size: 16px;
     background: Theme.background-color-primary-enabled-basic;

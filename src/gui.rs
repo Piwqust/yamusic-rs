@@ -1292,6 +1292,10 @@ fn after_dpi_change() {
 const SUPPORT_CHAT: &str =
     "https://yandex.ru/chat?context=%7B%22entrypoint%22%3A%22web_desktop%22%7D#/user/ee219503-b69b-9484-405b-6877a510e13c";
 
+/// Размер окна мини-плеера в логических пикселях; в `ui/app.slint` те же числа.
+const MINI_W: f32 = 400.0;
+const MINI_H: f32 = 112.0;
+
 fn quit() {
     #[cfg(windows)]
     crate::tray::remove();
@@ -2044,9 +2048,9 @@ pub fn run(start_hidden: bool) -> Result<(), slint::PlatformError> {
                 if was_max {
                     ww.set_maximized(false);
                 }
-                ww.set_min_inner_size(Some(LogicalSize::new(320.0, 88.0)));
+                ww.set_min_inner_size(Some(LogicalSize::new(MINI_W, MINI_H)));
             });
-            w.set_size(slint::LogicalSize::new(400.0, 88.0));
+            w.set_size(slint::LogicalSize::new(MINI_W, MINI_H));
             // Композитор на Linux возвращает размер развёрнутого окна уже после нашего запроса.
             #[cfg(target_os = "linux")]
             {
@@ -2054,13 +2058,13 @@ pub fn run(start_hidden: bool) -> Result<(), slint::PlatformError> {
                 Timer::single_shot(Duration::from_millis(150), move || {
                     let Some(ui) = weak.upgrade() else { return };
                     let w = ui.window();
-                    if ui.global::<App>().get_mini() && w.size().height as f32 > 120.0 * w.scale_factor() {
-                        w.set_size(slint::LogicalSize::new(400.0, 88.0));
+                    if ui.global::<App>().get_mini() && w.size().height as f32 > (MINI_H + 32.0) * w.scale_factor() {
+                        w.set_size(slint::LogicalSize::new(MINI_W, MINI_H));
                     }
                 });
             }
             let k = w.scale_factor();
-            let (mw, mh, gap) = ((400.0 * k) as i32, (88.0 * k) as i32, (16.0 * k) as i32);
+            let (mw, mh, gap) = ((MINI_W * k) as i32, (MINI_H * k) as i32, (16.0 * k) as i32);
             let (l, t, r, b) = sys::work_area(w);
             let p = pl.mini.get().unwrap_or(slint::PhysicalPosition::new(r - mw - gap, b - mh - gap));
             w.set_position(slint::PhysicalPosition::new(p.x.min(r - mw).max(l), p.y.min(b - mh).max(t)));
