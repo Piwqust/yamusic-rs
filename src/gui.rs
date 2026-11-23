@@ -150,6 +150,10 @@ fn mm_ss(ms: u64) -> String {
 
 use crate::net::group_digits;
 
+fn matches_track_filter(t: &Track, query: &str) -> bool {
+    query.is_empty() || t.title.to_lowercase().contains(query) || t.artists.to_lowercase().contains(query)
+}
+
 fn plural<'a>(n: u64, one: &'a str, few: &'a str, many: &'a str) -> &'a str {
     let (m10, m100) = (n % 10, n % 100);
     if m10 == 1 && m100 != 11 {
@@ -244,6 +248,7 @@ impl Ctx {
         let started = self.st.borrow().started;
         app.set_has_track(started && s.track.is_some());
         app.set_playing(s.playing);
+        app.set_likes_revision(s.likes_revision);
         app.set_loading(s.loading);
         app.set_position(s.position);
         app.set_duration(s.duration);
@@ -419,6 +424,10 @@ impl Ctx {
     }
 
     fn navigate(self: &Rc<Self>, page: Page, key: Option<String>, remember: bool) {
+        let key = match key {
+            Some(k) if page == Page::List && k.strip_prefix("playlist:").and_then(|s| s.strip_suffix(":3")) == Some(self.st.borrow().uid.as_str()) => Some("likes".into()),
+            key => key,
+        };
         let ui = self.ui();
         let app = ui.global::<App>();
         let from = app.get_page();
@@ -657,8 +666,15 @@ impl Ctx {
                 if self.st.borrow().coll_shown.as_ref().is_some_and(|d| Arc::ptr_eq(d, &data)) {
                     return;
                 }
-                self.st.borrow_mut().coll_shown = Some(data.clone());
+                let previous = self.st.borrow_mut().coll_shown.replace(data.clone());
                 if let Data::Collection(c) = &*data {
+                    self.show_likes_preview(c);
+                    if let Some(Data::Collection(old)) = previous.as_deref() {
+                        if old.likes_cover == c.likes_cover && Arc::ptr_eq(&old.top_artists, &c.top_artists)
+                            && Arc::ptr_eq(&old.playlist_tabs, &c.playlist_tabs) && Arc::ptr_eq(&old.album_tabs, &c.album_tabs) {
+                            return;
+                        }
+                    }
                     self.show_collection(c);
                 }
             }
@@ -685,10 +701,20 @@ impl Ctx {
         });
     }
 
-    fn show_collection(self: &Rc<Self>, c: &Collection) {
+    fn show_likes_preview(&self, c: &Collection) {
         let ui = self.ui();
         let app = ui.global::<App>();
         app.set_likes_subtitle(tracks_word(c.likes_count).into());
+        let preview = Rc::new(VecModel::from(c.likes_preview.iter().map(|t| self.track_item(t)).collect::<Vec<_>>()));
+        app.set_likes_preview(ModelRc::from(preview.clone()));
+        for (i, t) in c.likes_preview.iter().enumerate() {
+            self.load_cover(&preview, i, t.cover.as_deref(), 40.0, |r, img| r.cover = img);
+        }
+    }
+
+    fn show_collection(self: &Rc<Self>, c: &Collection) {
+        let ui = self.ui();
+        let app = ui.global::<App>();
         if let Some(uri) = &c.likes_cover {
             let size = self.size_for(58.0);
             let w = self.ui.clone();
@@ -697,12 +723,6 @@ impl Ctx {
                     ui.global::<App>().set_likes_cover(img.clone());
                 }
             });
-        }
-
-        let preview = Rc::new(VecModel::from(c.likes_preview.iter().map(|t| self.track_item(t)).collect::<Vec<_>>()));
-        app.set_likes_preview(ModelRc::from(preview.clone()));
-        for (i, t) in c.likes_preview.iter().enumerate() {
-            self.load_cover(&preview, i, t.cover.as_deref(), 40.0, |r, img| r.cover = img);
         }
 
         self.set_top_artists(c);
@@ -784,12 +804,12 @@ impl Ctx {
 
     fn track_item(&self, t: &Track) -> TrackItem {
         TrackItem {
+            id: t.id.as_str().into(),
             title: t.title.clone().into(),
             version: t.version.clone().into(),
             artists: t.artists.clone().into(),
             duration: mm_ss(t.duration_ms).into(),
             cover: Image::default(),
-            liked: self.player.is_liked(&t.id),
             explicit: t.explicit,
             available: true,
             artist_names: ModelRc::from(Rc::new(VecModel::from(
@@ -820,8 +840,14 @@ impl Ctx {
                 if self.st.borrow().list_shown.as_ref().is_some_and(|d| Arc::ptr_eq(d, &data)) {
                     return;
                 }
-                self.st.borrow_mut().list_shown = Some(data.clone());
+                let previous = self.st.borrow_mut().list_shown.replace(data.clone());
                 if let Data::List(l) = &*data {
+                    if let Some(Data::List(old)) = previous.as_deref() {
+                        if old.kind == ListKind::Likes && l.kind == ListKind::Likes && self.update_liked_rows(&old.tracks, &l.tracks) {
+                            self.update_list_current();
+                            return;
+                        }
+                    }
                     self.show_list_header(l);
                     self.apply_filter();
                 }
@@ -939,6 +965,33 @@ impl Ctx {
         self.st.borrow().list_shown.clone()
     }
 
+    /// Вставляем или убираем одну строку, чтобы сохранить фильтр и загруженные обложки.
+    fn update_liked_rows(&self, old: &[Track], new: &[Track]) -> bool {
+        if old.len().abs_diff(new.len()) != 1 { return false; }
+        let added = new.len() > old.len();
+        let (long, short) = if added { (new, old) } else { (old, new) };
+        let i = long.iter().zip(short).position(|(a, b)| a.id != b.id).unwrap_or(short.len());
+        if !long[i + 1..].iter().zip(&short[i..]).all(|(a, b)| a.id == b.id) { return false; }
+        let mut st = self.st.borrow_mut();
+        let pos = st.view.partition_point(|&index| index < i);
+        if added {
+            for index in &mut st.view[pos..] { *index += 1; }
+            let q = self.ui().global::<App>().get_list_filter().to_lowercase();
+            if matches_track_filter(&long[i], &q) {
+                st.view.insert(pos, i);
+                drop(st);
+                self.tracks.insert(pos, self.track_item(&long[i]));
+            }
+        } else {
+            let visible = st.view.get(pos) == Some(&i);
+            if visible { st.view.remove(pos); }
+            for index in &mut st.view[pos..] { *index -= 1; }
+            drop(st);
+            if visible { self.tracks.remove(pos); }
+        }
+        true
+    }
+
     fn apply_filter(self: &Rc<Self>) {
         let Some(data) = self.list() else { return };
         let Data::List(l) = &*data else { return };
@@ -947,7 +1000,7 @@ impl Ctx {
             .tracks
             .iter()
             .enumerate()
-            .filter(|(_, t)| q.is_empty() || t.title.to_lowercase().contains(&q) || t.artists.to_lowercase().contains(&q))
+            .filter(|(_, t)| matches_track_filter(t, &q))
             .map(|(i, _)| i)
             .collect();
         let items: Vec<TrackItem> = view
@@ -1052,7 +1105,13 @@ impl Ctx {
         let model = Rc::new(VecModel::from(
             items
                 .iter()
-                .map(|w| WheelEntry { name: w.name.clone().into(), description: w.description.clone().into(), cover: Image::default(), round: w.round })
+                .map(|w| WheelEntry {
+                    name: w.name.clone().into(),
+                    description: w.description.clone().into(),
+                    cover: Image::default(),
+                    round: w.round,
+                    control_accent: w.control_accent,
+                })
                 .collect::<Vec<_>>(),
         ));
         self.ui().global::<App>().set_wheel(ModelRc::from(model.clone()));
@@ -1752,8 +1811,13 @@ pub fn run(start_hidden: bool) -> Result<(), slint::PlatformError> {
     app.on_next(move || p.send(Cmd::Next));
     let p = player.clone();
     app.on_prev(move || p.send(Cmd::Prev));
+    app.on_seek(|seconds| with_ctx(|c| {
+        if let Some(position) = c.player.seek(seconds) {
+            c.ui().global::<App>().set_position(position);
+        }
+    }));
     let p = player.clone();
-    app.on_seek(move |s| p.send(Cmd::Seek(s)));
+    app.on_track_liked(move |id, _revision| p.is_liked(id.as_str()));
     let p = player.clone();
     app.on_like(move || {
         if let Some(t) = p.state().track {
@@ -1786,6 +1850,12 @@ pub fn run(start_hidden: bool) -> Result<(), slint::PlatformError> {
 
     app.on_navigate(|page| with_ctx(|c| c.navigate(page, None, true)));
     app.on_open_pin(|i| with_ctx(|c| c.open_pin(i as usize)));
+    app.on_open_pin_menu(|i, x, y| with_ctx(|c| {
+        if let Some(pin) = c.st.borrow().pins.get(i as usize) {
+            let item = c.menu_entry(&format!("unpin:{}", pin.target), "Открепить", c.ui().global::<Icons>().get_m_unpin(), false);
+            c.show_menu(vec![item], x, y, true);
+        }
+    }));
     app.on_open_likes(|| with_ctx(|c| c.navigate(Page::List, Some("likes".into()), true)));
     app.on_open_playlist(|i| {
         with_ctx(|c| {
@@ -1880,10 +1950,6 @@ pub fn run(start_hidden: bool) -> Result<(), slint::PlatformError> {
         with_ctx(|c| {
             let Some(t) = c.view_track(i as usize) else { return };
             c.like(t);
-            if let Some(mut row) = c.tracks.row_data(i as usize) {
-                row.liked = !row.liked;
-                c.tracks.set_row_data(i as usize, row);
-            }
         })
     });
     app.on_request_cover(|i| with_ctx(|c| c.request_cover(i as usize)));
@@ -3030,9 +3096,10 @@ impl Ctx {
         let pin = !self.is_pinned(&target);
         let ui = self.ui();
         let app = ui.global::<App>();
-        if target.starts_with("artist:") {
+        if self.current_artist().is_some_and(|(id, _)| target.strip_prefix("artist:") == Some(id.as_str())) {
             app.set_ar_pinned(pin);
-        } else {
+        }
+        if self.list_target().as_deref() == Some(target.as_str()) {
             app.set_pinned(pin);
         }
         std::thread::spawn(move || {
@@ -3250,6 +3317,10 @@ impl Ctx {
     }
 
     fn menu_action(self: &Rc<Self>, id: &str) {
+        if let Some(target) = id.strip_prefix("unpin:") {
+            if self.is_pinned(target) { self.toggle_pin(target.to_owned()); }
+            return;
+        }
         if let Some(rest) = id.strip_prefix("artist-") {
             let Some((aid, name)) = self.current_artist() else { return };
             match rest {
@@ -3841,9 +3912,22 @@ impl Ctx {
     }
 
     fn like(self: &Rc<Self>, t: Track) {
-        let now = !self.player.is_liked(&t.id);
-        self.player.send(Cmd::LikeTrack(t.clone()));
-        let msg = if now {
+        let Some(net) = self.st.borrow().net.clone() else { return };
+        self.player.send(Cmd::LikeTrack(t, Some(Box::new(move |track, liked, result| {
+            if let Err(e) = result {
+                net.say(format!("Лайк не сохранился: {e}"));
+                return;
+            }
+            net.like_saved(track, liked);
+            let (track, uid) = (track.clone(), net.uid.clone());
+            let _ = slint::invoke_from_event_loop(move || with_ctx(|c| {
+                if c.st.borrow().uid == uid { c.like_toast(&track, liked); }
+            }));
+        }))));
+    }
+
+    fn like_toast(self: &Rc<Self>, t: &Track, liked: bool) {
+        let msg = if liked {
             format!("Трек «{}» добавлен в плейлист «Мне нравится»", t.title)
         } else {
             format!("Трек «{}» удален из плейлиста «Мне нравится»", t.title)
@@ -4184,11 +4268,6 @@ fn register_extra(app: &App) {
         with_ctx(|c| {
             let Some(t) = c.st.borrow().chart.get(i.max(0) as usize).cloned() else { return };
             c.like(t);
-            let m = c.ui().global::<App>().get_search_chart();
-            if let Some(mut r) = m.row_data(i as usize) {
-                r.item.liked = !r.item.liked;
-                m.set_row_data(i as usize, r);
-            }
         })
     });
     app.on_play_result(|i| {
@@ -4201,11 +4280,6 @@ fn register_extra(app: &App) {
         with_ctx(|c| {
             let Some(t) = c.st.borrow().results.get(i.max(0) as usize).cloned() else { return };
             c.like(t);
-            let m = c.ui().global::<App>().get_sr_tracks();
-            if let Some(mut r) = m.row_data(i as usize) {
-                r.liked = !r.liked;
-                m.set_row_data(i as usize, r);
-            }
         })
     });
 
@@ -4229,11 +4303,6 @@ fn register_extra(app: &App) {
         with_ctx(|c| {
             let Some(t) = c.st.borrow().artist_tracks.get(i.max(0) as usize).cloned() else { return };
             c.like(t);
-            let m = c.ui().global::<App>().get_ar_popular();
-            if let Some(mut r) = m.row_data(i as usize) {
-                r.liked = !r.liked;
-                m.set_row_data(i as usize, r);
-            }
         })
     });
     app.on_artist_like(|| {

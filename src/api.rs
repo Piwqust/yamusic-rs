@@ -7,6 +7,7 @@ use reqwest::blocking::{Client, RequestBuilder};
 use reqwest::Method;
 use serde_json::{json, Value};
 use sha2::Sha256;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::client::{token_allowed, ANDROID_CLIENT, API_BASE as BASE, MP3_SALT, SIGN_KEY};
@@ -151,9 +152,9 @@ pub struct Collection {
     pub likes_count: u64,
     pub likes_cover: Option<String>,
     pub likes_preview: Vec<Track>,
-    pub top_artists: Vec<TopArtist>,
-    pub playlist_tabs: Vec<(String, Vec<Playlist>)>,
-    pub album_tabs: Vec<(String, Vec<Album>)>,
+    pub top_artists: Arc<[TopArtist]>,
+    pub playlist_tabs: Arc<[(String, Vec<Playlist>)]>,
+    pub album_tabs: Arc<[(String, Vec<Album>)]>,
 }
 
 /// Вайб на колесе «Моей волны».
@@ -163,6 +164,8 @@ pub struct WheelItem {
     pub description: String,
     pub cover: Option<String>,
     pub round: bool,
+    #[cfg_attr(target_os = "android", allow(dead_code))]
+    pub control_accent: bool,
     pub seeds: Vec<String>,
     /// Цвет обложки: по его оттенку телефонный клиент красит подложку карточки.
     #[cfg_attr(not(target_os = "android"), allow(dead_code))]
@@ -1059,19 +1062,26 @@ impl Api {
         v.pointer("/cover/uri").and_then(|u| u.as_str()).map(String::from)
     }
 
-    pub fn collection(&self, uid: &str) -> Res<Collection> {
+    pub fn collection_likes(&self) -> Res<(u64, Vec<Track>)> {
         let likes = self.get_raw("/landing-blocks/collection/playlist-with-likes?count=8")?;
+        let count = likes.pointer("/summary/count").and_then(|c| c.as_u64()).unwrap_or(0);
+        let tracks = likes.get("tracks").and_then(|t| t.as_array()).map(|a| a.iter().filter_map(parse_track).collect()).unwrap_or_default();
+        Ok((count, tracks))
+    }
+
+    pub fn collection(&self, uid: &str) -> Res<Collection> {
+        let (likes_count, likes_preview) = self.collection_likes()?;
         let top = self.get_raw("/personal/top/artists/month?count=5").unwrap_or_default();
         let pls = self.get_raw("/landing-blocks/collection/playlists-liked-and-playlists-created?count=8").unwrap_or_default();
         let albums = self.get_raw("/landing-blocks/collection/albums-liked-and-albums-presaved?count=8").unwrap_or_default();
         let likes_cover = self.likes_cover(uid);
         Ok(Collection {
-            likes_count: likes.pointer("/summary/count").and_then(|c| c.as_u64()).unwrap_or(0),
+            likes_count,
             likes_cover,
-            likes_preview: likes.get("tracks").and_then(|t| t.as_array()).map(|a| a.iter().filter_map(parse_track).collect()).unwrap_or_default(),
+            likes_preview,
             top_artists: top.get("artists").and_then(|a| a.as_array()).map(|a| a.iter().filter_map(parse_top_artist).collect()).unwrap_or_default(),
-            playlist_tabs: tabs(&pls, "playlist", parse_playlist),
-            album_tabs: tabs(&albums, "album", parse_album),
+            playlist_tabs: tabs(&pls, "playlist", parse_playlist).into(),
+            album_tabs: tabs(&albums, "album", parse_album).into(),
         })
     }
 
@@ -1248,6 +1258,7 @@ impl Api {
                             description: str_of(it, "description"),
                             cover: d.pointer("/agent/cover/uri").and_then(|u| u.as_str()).map(String::from),
                             round: d.pointer("/agent/entity/type").and_then(|t| t.as_str()) == Some("artist"),
+                            control_accent: it.get("style").and_then(Value::as_str) == Some("CONTROL_ACCENT"),
                             color: hex_color(d.pointer("/agent/cover/color")),
                             seeds: d
                                 .pointer("/wave/seeds")

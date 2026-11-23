@@ -294,7 +294,7 @@ fn bind_player(ui: &App, player: &Player, sleep: &Rc<RefCell<SleepTimer>>) {
     let p = player.clone();
     now.on_like(move || {
         if let Some(t) = p.state().track {
-            p.send(Cmd::LikeTrack(t));
+            p.send(Cmd::LikeTrack(t, None));
         }
     });
     let p = player.clone();

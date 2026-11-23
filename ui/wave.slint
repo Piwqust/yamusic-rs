@@ -1,7 +1,7 @@
 // «Моя волна»: колесо вайбов, кнопка запуска и фоновое пятно в цветах трека.
 
 import { Theme } from "theme.slint";
-import { Icons, Icon, Cover, Motion, Ripple, FadeOnKey, LikePop, Fade } from "widgets.slint";
+import { Icons, Icon, HoverIcon, BarButton, Cover, Motion, Ripple, FadeOnKey, LikePop, Fade } from "widgets.slint";
 import { T, App, WheelEntry } from "state.slint";
 import { VolumePopup } from "popups.slint";
 
@@ -10,27 +10,28 @@ component GlassButton inherits Rectangle {
     in property <length> icon-size: 24px;
     in property <bool> enabled: true;
     out property <bool> hovered: ta.has-hover;
+    in property <bool> highlight-icon: hovered;
     callback clicked;
     width: 48px;
     height: 48px;
     border-radius: self.height / 2;
-    // Фон оригинала: 8% белого, под курсором 10%; переход 0,3 с ease.
     background: ta.has-hover && enabled ? #ffffff1a : #ffffff14;
     animate background { duration: Motion.t; easing: ease; }
     // Значок может качнуться или вырасти (лайк): сдвиг и масштаб задаёт владелец.
     in property <float> icon-scale: 1;
     in property <length> icon-shift: 0px;
+    // `VibePlayerBar_ripple`: 9% белого.
     rip := Ripple { border-radius: parent.border-radius; ink: #ffffff17; }
     Icon {
         x: (parent.width - self.width) / 2 + root.icon-shift;
-        source: icon;
-        size: icon-size;
+        source: root.icon;
+        size: root.icon-size;
         transform-scale: root.icon-scale;
-        colorize: enabled ? (ta.has-hover ? #ffffffe6 : #ffffffb3) : #ffffff14;
+        colorize: !root.enabled ? #ffffff14 : root.highlight-icon ? #e6e6e6 : #ffffffb3;
         animate colorize { duration: Motion.t; easing: ease; }
     }
     ta := TouchArea {
-        enabled: enabled;
+        enabled: root.enabled;
         mouse-cursor: MouseCursor.pointer;
         clicked => {
             rip.play(self.mouse-x, self.mouse-y);
@@ -47,28 +48,14 @@ component VibePlay inherits Rectangle {
     width: 64px;
     height: 64px;
     border-radius: 32px;
-    background: playing ? #ffffff40 : ta.has-hover ? Theme.controls-color-primary-default-hovered : #ffff00;
+    background: playing ? #ffffff40 : Theme.logo-color-primary-player;
     animate background { duration: Motion.t; easing: ease; }
     transform-scale: ta.has-hover ? 1.05 : 1;
     animate transform-scale { duration: Motion.t; easing: ease; }
     Icon {
         source: playing ? Icons.pause-big : Icons.play-big;
         size: 32px;
-        colorize: playing ? #e6e6e6 : #000;
-        animate colorize { duration: Motion.t; easing: ease; }
-    }
-    ta := TouchArea { mouse-cursor: MouseCursor.pointer; clicked => { root.clicked(); } }
-}
-
-// «Назад» и «вперёд» у кнопки волны: `transition: color .3s`.
-component SkipButton inherits Rectangle {
-    in property <image> icon;
-    callback clicked;
-    width: 24px;
-    Icon {
-        source: icon;
-        size: 24px;
-        colorize: ta.has-hover ? #ffffffe6 : #ffffff80;
+        colorize: playing ? (ta.has-hover ? #e6e6e6 : #ffffff80) : #000;
         animate colorize { duration: Motion.t; easing: ease; }
     }
     ta := TouchArea { mouse-cursor: MouseCursor.pointer; clicked => { root.clicked(); } }
@@ -82,6 +69,8 @@ component WheelSlot inherits Rectangle {
     in property <length> wrap-x;
     in property <length> area-h;
     in property <length> area-w;
+    in property <length> pointer-x;
+    in property <length> pointer-y;
     callback clicked;
 
     property <float> t: abs(p) / 4;
@@ -94,7 +83,7 @@ component WheelSlot inherits Rectangle {
 
     x: wrap-x + 120px * (1 + cos(f * 1rad));
     y: yc - 40px;
-    width: 334px;
+    width: area-w - wrap-x;
     height: 80px;
     // Проявление слота: `WheelDesktopItem_fade-in` за 0,3 с ease-in-out.
     in property <float> appear: 1;
@@ -111,16 +100,21 @@ component WheelSlot inherits Rectangle {
         background: transparent;
         source: entry.cover;
         alpha: root.alpha;
-        if ta.has-hover: Rectangle {
-            width: 40px;
-            height: 40px;
-            Icon { source: Icons.play-filled; size: 40px; colorize: #ffffff.with-alpha(root.alpha); }
+        if !entry.control-accent: HoverIcon {
+            property <bool> hot: abs(root.p) < 2.5 && root.pointer-x >= 0px && root.pointer-x < root.width
+                && root.pointer-y >= 0px && root.pointer-y < root.height;
+            property <float> reveal: hot ? 1 : 0;
+            animate reveal { duration: App.motion ? Theme.duration-transition : 0ms; easing: ease; }
+            visible: self.reveal > 0;
+            source: Icons.play-filled;
+            size: 40px;
+            zoomed: hot && abs(root.pointer-x - 40px) < 20px && abs(root.pointer-y - 40px) < 20px;
+            alpha: root.alpha * self.reveal;
         }
     }
     VerticalLayout {
         x: 96px;
-        // Как у оригинала: подпись тянется до края колеса, а не до фиксированных 202.
-        width: max(40px, root.area-w - root.x - 96px - 5px);
+        width: max(0px, root.width - self.x - 36px);
         alignment: center;
         spacing: 4px;
         if entry.description != "": Text {
@@ -134,10 +128,10 @@ component WheelSlot inherits Rectangle {
             text: entry.name;
             wrap: word-wrap;
             overflow: elide;
-            max-height: 40px;
+            max-height: entry.description != "" ? 60px : 80px;
             font-size: Theme.font-size-label-l;
             font-weight: 500;
-            color: #ffffff.with-alpha(root.alpha);
+            color: (entry.control-accent ? Theme.logo-color-primary-player : #fff).transparentize(1 - root.alpha);
         }
     }
     ta := TouchArea {
@@ -328,47 +322,44 @@ export component WavePage inherits Rectangle {
         property <int> per-view: max(4, min(9, floor(self.height / 106px)));
         property <length> slide-h: self.height / per-view;
         property <length> wrap-x: self.width - min(self.width * 0.8, 600px);
-        in-out property <float> offset: 0;
-        // Клик по дальнему слайду — `slideToLoop` Swiper: 0,3 с ease. Колёсико у оригинала
-        // в режиме freeMode двигает ленту сразу, без перехода.
-        property <bool> glide;
-        animate offset { duration: App.motion && glide ? 300ms : 0ms; easing: ease; }
-        property <int> base: floor(offset);
-        property <float> frac: offset - base;
-        // Слайды проявляются, когда лента загрузилась.
+        property <bool> centering;
+        property <float> offset: App.wheel-offset;
+        animate offset { duration: App.motion && wheel.centering ? Theme.duration-transition : 0ms; easing: ease; }
+        property <int> first: floor(offset) - ceil(per-view / 2);
+        property <int> slot-count: per-view + 3;
+        // Слайды проявляются, когда лента загрузилась: `WheelDesktopItem_fade-in`.
         property <float> appear: App.motion ? 0 : 1;
         animate appear { duration: Motion.t; easing: ease-in-out; }
         changed n => { self.appear = self.n > 0 ? 1 : 0; }
         init => { self.appear = self.n > 0 ? 1 : 0; }
 
-        TouchArea {
-            scroll-event(e) => {
-                // Щелчок колёсика (60 px здесь) — 100 px у оригинала, чувствительность
-                // Swiper 0,3: лента сдвигается на 30 px.
-                wheel.glide = false;
-                wheel.offset = wheel.offset - (e.delta-y / 60px) * 30px / wheel.slide-h;
-                accept
-            }
+        function move-to(target: float, center: bool) {
+            wheel.centering = center;
+            App.wheel-offset = target;
         }
 
-        if n > 0: Rectangle {
-            for k in 13: WheelSlot {
-                property <int> rel: k - 6;
-                property <int> idx: mod(mod(wheel.base + rel, wheel.n) + wheel.n, wheel.n);
+        wheel-input := TouchArea {
+            scroll-event(e) => {
+                // В Windows щелчок колёсика даёт 60 px в Slint и 30 px в оригинале (100 × 0,3).
+                wheel.move-to(wheel.offset - e.delta-y * 0.5 / wheel.slide-h, false);
+                accept
+            }
+            for k in (wheel.n > 0 ? wheel.slot-count : 0): WheelSlot {
+                // Меняем карточку, когда слот уже ушёл за край колеса.
+                property <int> ordinal: k + ceil((wheel.first - k) / wheel.slot-count) * wheel.slot-count;
+                property <int> idx: mod(mod(ordinal, wheel.n) + wheel.n, wheel.n);
                 entry: App.wheel[idx];
-                p: rel - wheel.frac;
+                p: ordinal - wheel.offset;
+                pointer-x: wheel-input.has-hover ? wheel-input.mouse-x - self.x : -1px;
+                pointer-y: wheel-input.mouse-y - self.y;
                 slide-h: wheel.slide-h;
                 wrap-x: wheel.wrap-x;
                 area-h: wheel.height;
                 area-w: wheel.width;
                 appear: wheel.appear;
                 clicked => {
-                    if abs(self.p) >= 2.5 {
-                        wheel.glide = true;
-                        wheel.offset = wheel.offset + self.p;
-                    } else {
-                        App.play-wheel(self.idx);
-                    }
+                    if abs(self.p) >= 2.5 { wheel.move-to(self.ordinal, true); }
+                    else { App.play-wheel(self.idx); }
                 }
             }
         }
@@ -421,14 +412,6 @@ export component WavePage inherits Rectangle {
         color: #ffffff;
     }
 
-    if !App.has-track: VibePlay {
-        x: cx - 32px;
-        y: 580px + dp;
-        clicked => { App.play-pause(); }
-    }
-    if !App.has-track: Icon { x: cx - 76px - 12px; y: 600px + dp; source: Icons.prev; size: 24px; colorize: #ffffff14; }
-    if !App.has-track: Icon { x: cx - 76px + 140px; y: 600px + dp; source: Icons.next; size: 24px; colorize: #ffffff14; }
-
     // Исполнитель крупно: клик открывает его страницу.
     if App.has-track && !paused: FitTitle {
         x: text-x;
@@ -476,20 +459,19 @@ export component WavePage inherits Rectangle {
             height: 48px;
             property <bool> open: vol.hovered || vol-pop.hovered || bridge.has-hover;
             vol := GlassButton {
+                highlight-icon: self.hovered || vol-pop.hovered;
                 icon: App.volume <= 0 ? Icons.volume-off : Icons.volume;
                 clicked => { App.toggle-mute(); }
             }
             bridge := TouchArea {
-                y: -12px;
-                height: 12px;
-                visible: vol-pop.visible;
+                y: -4px;
+                height: 4px;
+                visible: parent.open;
             }
             vol-pop := VolumePopup {
                 x: (parent.width - self.width) / 2;
-                y: -12px - self.height;
-                opacity: parent.open ? 1 : 0;
-                animate opacity { delay: App.motion ? 200ms : 0ms; duration: Motion.t; easing: ease; }
-                visible: self.opacity > 0.01;
+                y: -4px - self.height;
+                open: parent.open;
                 glass: true;
             }
         }
@@ -575,17 +557,24 @@ export component WavePage inherits Rectangle {
         }
     }
 
-    if App.has-track: HorizontalLayout {
+    HorizontalLayout {
         x: cx - 88px;
         y: 580px + dp;
         width: 176px;
         height: 64px;
         spacing: 32px;
-        SkipButton { icon: Icons.prev; clicked => { App.prev(); } }
+        BarButton {
+            width: 24px; height: 24px; y: 20px;
+            icon: Icons.prev; enabled: App.can-prev; smooth-color: true;
+            clicked => { App.prev(); }
+        }
         VibePlay { playing: App.playing; clicked => { App.play-pause(); } }
-        SkipButton { icon: Icons.next; clicked => { App.next(); } }
+        BarButton {
+            width: 24px; height: 24px; y: 20px;
+            icon: Icons.next; enabled: App.has-track; smooth-color: true;
+            clicked => { App.next(); }
+        }
     }
-
 
     // Версия в правом нижнем углу, как у официального приложения.
     Rectangle {

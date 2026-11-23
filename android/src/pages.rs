@@ -563,7 +563,7 @@ fn menu_action(n: i32) {
         }
         1 => {
             let liked = !player.is_liked(&t.id);
-            player.send(Cmd::LikeTrack(t));
+            player.send(Cmd::LikeTrack(t, None));
             with(|s| {
                 if let Some(ui) = s.ui.upgrade() {
                     ui.global::<Pages>().set_menu_liked(liked);

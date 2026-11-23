@@ -4,12 +4,12 @@
 export enum Page { wave, search, trends, concerts, nonmusic, collection, list, artist, artists, settings, grid, chart, history }
 
 export struct TrackItem {
+    id: string,
     title: string,
     version: string,
     artists: string,
     duration: string,
     cover: image,
-    liked: bool,
     explicit: bool,
     available: bool,
     artist-names: [string],
@@ -133,6 +133,7 @@ export struct WheelEntry {
     description: string,
     cover: image,
     round: bool,
+    control-accent: bool,
 }
 
 // trend: 0 — корона (первое место), 1 — без изменений, 2 — вверх, 3 — вниз, 4 — новый.
@@ -185,6 +186,7 @@ export global App {
     in property <string> version;
     in property <string> app-name;
     in property <[WheelEntry]> wheel;
+    in-out property <float> wheel-offset;
     in property <bool> pinned;
 
     // Аккаунт
@@ -205,6 +207,8 @@ export global App {
     in property <float> position;
     in property <float> duration;
     in property <bool> liked;
+    in property <int> likes-revision;
+    pure callback track-liked(string, int) -> bool;
     in property <int> repeat;
     in property <bool> shuffle;
     in property <float> volume: 0.6;
@@ -498,6 +502,7 @@ export global App {
     callback artist-like-track(int);
     callback artist-familiar();
     callback open-pin(int);
+    callback open-pin-menu(int, length, length);
     callback open-likes();
     callback open-playlist(int);
     callback open-album(int);
