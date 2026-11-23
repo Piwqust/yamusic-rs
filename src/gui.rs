@@ -50,6 +50,9 @@ struct State {
     history: Vec<(Page, Option<String>)>,
     forward: Vec<(Page, Option<String>)>,
     track_id: Option<String>,
+    /// Фото исполнителя как пришло и откуда начинать растворять его низ (доля высоты).
+    cutout_raw: Option<Image>,
+    cutout_from: f32,
     toast_timer: Option<Timer>,
     cards: HashMap<String, Vec<Card>>,
     search_shown: Option<Arc<Data>>,
@@ -255,6 +258,17 @@ impl Ctx {
         self.ui.upgrade().expect("окно живо")
     }
 
+    /// Фото исполнителя с растворённым низом — под текущую раскладку страницы волны.
+    fn apply_cutout(&self) {
+        let (raw, from) = {
+            let st = self.st.borrow();
+            (st.cutout_raw.clone(), st.cutout_from)
+        };
+        if let Some(raw) = raw {
+            self.ui().global::<App>().set_cutout(fade_cutout(&raw, if from > 0.0 { from } else { 0.8 }));
+        }
+    }
+
     /// Ближайший размер обложки для `css` логических пикселей.
     fn size_for(&self, css: f32) -> u32 {
         // Ровно под экран: картинка 1:1 рисуется без сглаживания, а это вдвое быстрее.
@@ -378,6 +392,23 @@ impl Ctx {
                             if let Some(ui) = weak.upgrade() {
                                 ui.global::<App>().set_cover(img.clone());
                             }
+                        }
+                    })
+                });
+            }
+            // Фото исполнителя над названием. Место под него раскладка держит сразу, как
+            // `textContainer_withCover` оригинала, а сама картинка проявляется, когда придёт.
+            app.set_cutout(Image::default());
+            self.st.borrow_mut().cutout_raw = None;
+            let cutout = t.cutout_url();
+            app.set_has_cutout(cutout.is_some());
+            if let Some(url) = cutout {
+                let id = t.id.clone();
+                self.images.get(&url, 1000, move |img| {
+                    with_ctx(|c| {
+                        if c.st.borrow().track_id.as_deref() == Some(id.as_str()) {
+                            c.st.borrow_mut().cutout_raw = Some(img.clone());
+                            c.apply_cutout();
                         }
                     })
                 });
@@ -1817,6 +1848,8 @@ pub fn run(start_hidden: bool) -> Result<(), slint::PlatformError> {
             history: Vec::new(),
             forward: Vec::new(),
             track_id: None,
+            cutout_raw: None,
+            cutout_from: 0.0,
             toast_timer: None,
             cards: HashMap::new(),
             search_shown: None,
@@ -2423,6 +2456,25 @@ fn vibe_bucket(c: Option<[u8; 3]>) -> &'static (&'static str, u16, u16, [u8; 3],
             .and_then(|(_, b)| by_name(b.0))
     };
     found.unwrap_or(fallback)
+}
+
+/// Растворить низ фото исполнителя. У оригинала это маска `VibeArtistCover_root`:
+/// `linear-gradient(180deg, #000 80%, transparent)` по высоте блока. Масок у Slint нет,
+/// поэтому прозрачность пишется в пиксели. `from` — где в долях высоты картинки проходят
+/// 80% блока; его считает раскладка (`ui/wave.slint`), к низу картинки прозрачность 0.
+fn fade_cutout(img: &Image, from: f32) -> Image {
+    let Some(mut buf) = img.to_rgba8() else { return img.clone() };
+    let from = from.clamp(0.0, 0.999);
+    let (w, h) = (buf.width() as usize, buf.height() as usize);
+    let pixels = buf.make_mut_slice();
+    for y in ((h as f32 * from) as usize).min(h)..h {
+        let v = (y as f32 + 0.5) / h as f32;
+        let k = ((1.0 - v) / (1.0 - from)).clamp(0.0, 1.0);
+        for p in &mut pixels[y * w..(y + 1) * w] {
+            p.a = (p.a as f32 * k).round() as u8;
+        }
+    }
+    Image::from_rgba8(buf)
 }
 
 /// Режим наложения luminosity: оттенок фона, яркость картинки.
@@ -4330,6 +4382,14 @@ fn register_extra(app: &App) {
             if let Some(a) = c.player.state().track.and_then(|t| t.album_id) {
                 c.ui().global::<App>().set_fullscreen(false);
                 c.navigate(Page::List, Some(format!("album:{a}")), true);
+            }
+        })
+    });
+    app.on_cutout_fade(|from| {
+        with_ctx(|c| {
+            if (c.st.borrow().cutout_from - from).abs() > 0.002 {
+                c.st.borrow_mut().cutout_from = from;
+                c.apply_cutout();
             }
         })
     });

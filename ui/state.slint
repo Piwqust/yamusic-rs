@@ -200,6 +200,12 @@ export global App {
     in property <string> title;
     in property <string> artists;
     in property <image> cover;
+    // Фото исполнителя без фона для «Моей волны»: есть ли оно у трека и сама картинка,
+    // когда загрузится (низ уже растворён, как маской оригинала).
+    in property <bool> has-cutout;
+    in property <image> cutout;
+    // Раскладка сообщает, с какой доли высоты фото начинать растворять его низ.
+    callback cutout-fade(float);
     in property <color> tint: #1c2a40;
     in property <color> accent: #3d5c8f;
     in property <bool> playing;
