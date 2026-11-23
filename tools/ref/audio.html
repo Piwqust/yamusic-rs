@@ -1,0 +1,28 @@
+<!doctype html><meta charset="utf-8"><pre id="d">pending</pre>
+<script>
+(async () => {
+  const out = [];
+  // Несколько сигналов разной громкости и состава: стерео, 48 кГц, 2048 кадров.
+  const cases = [[0.8, 110, 0], [0.25, 440, 0.02], [0.05, 90, 0.01], [0.6, 1500, 0.1], [0.01, 300, 0.001], [0.3, 60, 0.3]];
+  for (const [amp, freq, noise] of cases) {
+    const n = 2048, rate = 48000;
+    const ctx = new OfflineAudioContext(2, n, rate);
+    const buf = ctx.createBuffer(2, n, rate);
+    let seed = 12345;
+    const rnd = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648 * 2 - 1; };
+    for (let c = 0; c < 2; c++) {
+      const d = buf.getChannelData(c);
+      for (let i = 0; i < n; i++) d[i] = amp * Math.sin(2 * Math.PI * freq * i / rate + c * 0.7) + noise * rnd();
+    }
+    const srcNode = ctx.createBufferSource(); srcNode.buffer = buf;
+    const an = ctx.createAnalyser(); an.fftSize = 32; an.smoothingTimeConstant = 0;
+    srcNode.connect(an); an.connect(ctx.destination); srcNode.start();
+    await ctx.startRendering();
+    const bytes = new Uint8Array(an.frequencyBinCount); an.getByteFrequencyData(bytes);
+    const mono = []; const l = buf.getChannelData(0), r = buf.getChannelData(1);
+    for (let i = n - 32; i < n; i++) mono.push((l[i] + r[i]) / 2);
+    out.push({ bytes: Array.from(bytes), mono });
+  }
+  document.getElementById('d').textContent = JSON.stringify(out);
+})().catch(e => { document.getElementById('d').textContent = 'ERR ' + e; });
+</script>
