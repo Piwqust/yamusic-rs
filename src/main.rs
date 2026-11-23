@@ -63,10 +63,15 @@ fn main() -> Result<(), slint::PlatformError> {
         sys::wake_existing();
         return Ok(());
     }
-    // Skia без видеокарты: память не зависит от драйвера (с OpenGL или D3D окно занимает
-    // в 2–3 раза больше). Режим работы («Плавный» или «Лёгкий») меняет только анимации
-    // и кэши и переключается на лету (gui::apply_mode).
-    let mut backend = slint::BackendSelector::new().backend_name("winit".into()).renderer_name("skia-software".into());
+    // Окно рисует Skia. Без видеокарты память не зависит от драйвера (с D3D или OpenGL окно
+    // занимает в 2–3 раза больше), но пятно «Моей волны» на большом экране процессор не
+    // тянет: на 3000×1700 это больше ядра и пропуски кадров. Поэтому в «Плавном» режиме рисует
+    // видеокарта (настройка «Отрисовка видеокартой»); если её нет, Slint сам переходит на
+    // процессор. Режим работы меняет анимации и кэши на лету (gui::apply_mode), рендерер —
+    // после перезапуска. YAMUSIC_RS_RENDERER задаёт рендерер напрямую — для проверки.
+    let renderer = std::env::var("YAMUSIC_RS_RENDERER").unwrap_or_else(|_| if config::gpu_wanted() { "skia" } else { "skia-software" }.into());
+    config::GPU.store(renderer != "skia-software", std::sync::atomic::Ordering::Relaxed);
+    let mut backend = slint::BackendSelector::new().backend_name("winit".into()).renderer_name(renderer);
     if sandbox {
         backend = backend.with_winit_window_attributes_hook(offscreen);
     }

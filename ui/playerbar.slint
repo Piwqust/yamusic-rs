@@ -1,7 +1,7 @@
 // Нижний плеер.
 
 import { Theme } from "theme.slint";
-import { Icons, Icon, BarButton, Cover, ArtistLinks, ExplicitMark, Motion, LikePop } from "widgets.slint";
+import { Icons, Icon, BarButton, Cover, ArtistLinks, ExplicitMark, LikePop } from "widgets.slint";
 import { App } from "state.slint";
 import { VolumePopup } from "popups.slint";
 
@@ -53,9 +53,6 @@ export component PlayerBar inherits Rectangle {
             width: parent.width * shown;
             height: parent.height;
             background: #ffffff0d;
-            // `ChangeTimecodeBackground`: между тиками плеера полоса едет линейно за 0,3 с,
-            // при перетаскивании — сразу.
-            animate width { duration: dragging ? 0ms : Motion.t; easing: linear; }
         }
         // Полоса прогресса сверху: видна при наведении на плеер.
         if rail-alpha > 0: Rectangle {
@@ -67,7 +64,6 @@ export component PlayerBar inherits Rectangle {
                 width: parent.width * shown;
                 background: seek-ta.has-hover || dragging ? Theme.controls-color-primary-default-enabled : #ffffff29;
                 opacity: root.rail-alpha;
-                animate width { duration: dragging ? 0ms : Motion.t; easing: linear; }
             }
         }
 
@@ -233,10 +229,7 @@ export component PlayerBar inherits Rectangle {
 
     if rail-alpha > 0: Rectangle {
         opacity: root.rail-alpha;
-        // Бегунок едет вместе с полосой: `transform .3s linear`.
-        property <length> at: root.width * shown;
-        animate at { duration: dragging ? 0ms : Motion.t; easing: linear; }
-        x: self.at - self.width / 2;
+        x: root.width * shown - self.width / 2;
         y: 2px - self.height / 2;
         width: 12px;
         height: self.width;

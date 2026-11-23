@@ -45,6 +45,9 @@ pub struct Config {
     pub download_flac: bool,
     /// Громкость в децибелах, а не квадратом положения ползунка.
     pub log_volume: bool,
+    /// Рисовать окно видеокартой. Не задано — да в «Плавном» режиме и нет в «Лёгком».
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gpu: Option<bool>,
     /// Блоки главной и «Книг и подкастов», которые скрыл пользователь.
     pub hidden_blocks: Vec<HiddenBlock>,
     /// Раз в полчаса спрашивать GitHub о новой версии.
@@ -93,6 +96,7 @@ impl Default for Config {
             download_dir: String::new(),
             download_flac: false,
             log_volume: false,
+            gpu: None,
             hidden_blocks: Vec::new(),
             check_updates: true,
             allow_explicit: true,
@@ -111,6 +115,17 @@ impl Default for Config {
 pub fn sandbox() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var_os("YAMUSIC_RS_SANDBOX").is_some())
+}
+
+/// Каким рендерером запущено окно: видеокартой или процессором.
+pub static GPU: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Рисовать ли окно видеокартой. Спрашивается до загрузки настроек и создания окна:
+/// рендерер выбирается раньше всего остального и до перезапуска не меняется.
+pub fn gpu_wanted() -> bool {
+    let text = std::fs::read_to_string(dir().join("config.json")).unwrap_or_default();
+    let json: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
+    json["gpu"].as_bool().unwrap_or_else(|| json["mode"].as_str() != Some("lite"))
 }
 
 /// %APPDATA%\yamusic-rs или ~/.config/yamusic-rs. Папка прежнего названия (yamusic-lite, ещё раньше yawave) переносится
@@ -142,6 +157,11 @@ pub fn cache_dir() -> PathBuf {
 }
 
 impl Config {
+    /// Рисует ли окно видеокарта при этих настройках (после перезапуска).
+    pub fn gpu_on(&self) -> bool {
+        self.gpu.unwrap_or(self.mode != "lite")
+    }
+
     pub fn load() -> Self {
         let mut c: Config = std::fs::read_to_string(dir().join("config.json"))
             .ok()

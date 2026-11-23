@@ -203,21 +203,40 @@ impl<S: rodio::Source<Item = f32>> rodio::Source for Tapped<S> {
 // ---------- состояние воркера ----------
 
 /// Случайные числа воркера: начало времени и разброс оттенков. Точность не важна.
-struct Rng(u64);
+struct Rng {
+    state: u64,
+    /// Постоянное значение вместо случайного: так порт сверяется с воркером оригинала.
+    fixed: Option<f64>,
+}
 
 impl Rng {
     fn new() -> Rng {
         let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(1, |d| d.as_nanos() as u64);
-        Rng(nanos | 1)
+        Rng { state: nanos | 1, fixed: None }
+    }
+
+    #[cfg(test)]
+    fn fixed(value: f64) -> Rng {
+        Rng { state: 1, fixed: Some(value) }
     }
 
     fn unit(&mut self) -> f64 {
-        self.0 ^= self.0 << 13;
-        self.0 ^= self.0 >> 7;
-        self.0 ^= self.0 << 17;
-        (self.0 >> 11) as f64 / (1u64 << 53) as f64
+        if let Some(v) = self.fixed {
+            return v;
+        }
+        self.unit_random()
     }
 
+    fn unit_random(&mut self) -> f64 {
+        let s = &mut self.state;
+        *s ^= *s << 13;
+        *s ^= *s >> 7;
+        *s ^= *s << 17;
+        (*s >> 11) as f64 / (1u64 << 53) as f64
+    }
+}
+
+impl Rng {
     /// `Math.floor(Math.random() * (max - min + 1)) + min`.
     fn range(&mut self, min: f64, max: f64) -> f64 {
         (self.unit() * (max.floor() - min + 1.0)).floor() + min
@@ -394,8 +413,8 @@ struct State {
     audio_ratio: Tween,
     freq: Option<[f64; 3]>,
     react: [Tween; 3],
-    /// Отложенные шаги анимации лайка: (когда, какой круг, к какому значению).
-    timers: Vec<(Instant, usize, f64)>,
+    /// Отложенные шаги анимации лайка: (когда по часам воркера в мс, какой круг, к какому значению).
+    timers: Vec<(f64, usize, f64)>,
 }
 
 impl State {
@@ -424,14 +443,15 @@ impl State {
     }
 
     /// Лайк: круги вспыхивают по очереди и гаснут через 0,85–1,05 секунды.
-    fn like(&mut self, now: Instant) {
+    fn like(&mut self, now: f64) {
         self.react[0].update(0.7);
-        for (ms, circle, value) in [(100, 1, 0.7), (150, 2, 0.7), (850, 0, 0.0), (950, 1, 0.0), (1050, 2, 0.0)] {
-            self.timers.push((now + Duration::from_millis(ms), circle, value));
+        for (ms, circle, value) in [(100.0, 1, 0.7), (150.0, 2, 0.7), (850.0, 0, 0.0), (950.0, 1, 0.0), (1050.0, 2, 0.0)] {
+            self.timers.push((now + ms, circle, value));
         }
     }
 
-    fn update(&mut self, dt: f64, now: Instant) {
+    /// Сработать таймерам, чьё время пришло: у оригинала это `setTimeout` между кадрами.
+    fn fire_timers(&mut self, now: f64) {
         let mut due = Vec::new();
         self.timers.retain(|&(at, circle, value)| {
             let fire = at <= now;
@@ -443,6 +463,9 @@ impl State {
         for (circle, value) in due {
             self.react[circle].update(value);
         }
+    }
+
+    fn update(&mut self, dt: f64) {
         self.energy.next(dt);
         self.colors.next(dt);
         self.react.iter_mut().for_each(|t| t.next(dt));
@@ -896,15 +919,20 @@ fn run(rx: Receiver<Msg>, tap: Arc<Tap>, busy: Arc<AtomicBool>, emit: impl Fn(Ev
     let mut state = State::new(&mut rng);
     let mut renderer: Option<Renderer> = None;
     let (mut mounted, mut visible, mut playing) = (false, true, false);
+    let mut palette: Option<Palette> = None;
     let mut crop = [0, 0, SIZE, SIZE];
     let mut circles = 3;
     let mut fallback = false;
     let frame = Duration::from_millis(1000 / FPS);
-    let mut last = Instant::now();
-    let mut next = last;
-    let mut shown_at = last;
+    // Часы воркера в миллисекундах: по ним идут отложенные шаги лайка.
+    let clock = Instant::now();
+    let ms = |t: Instant| t.duration_since(clock).as_secs_f64() * 1000.0;
+    let mut last = clock;
+    let mut next = clock;
+    let mut shown_at = clock;
     // Замер скорости, как у оригинала: среднее за 10 секунд, три плохих замера подряд.
     let (mut spent, mut frames, mut slow) = (Duration::ZERO, 0u32, 0u32);
+    let mut skipped = 0u32;
 
     loop {
         let active = mounted && visible && !fallback;
@@ -925,6 +953,17 @@ fn run(rx: Receiver<Msg>, tap: Arc<Tap>, busy: Arc<AtomicBool>, emit: impl Fn(Ev
             match msg {
                 Msg::Mount(on) => {
                     if on && !mounted {
+                        // Оригинал при каждом показе страницы создаёт воркер заново: случайное
+                        // начало времени и исходные цвета, из которых пятно переходит к нужным.
+                        state = State::new(&mut rng);
+                        if let Some(p) = palette {
+                            state.colors.update(p);
+                        }
+                        if playing {
+                            state.play();
+                        } else {
+                            state.idle();
+                        }
                         shown_at = now;
                         last = now;
                         next = now;
@@ -950,8 +989,11 @@ fn run(rx: Receiver<Msg>, tap: Arc<Tap>, busy: Arc<AtomicBool>, emit: impl Fn(Ev
                         state.idle();
                     }
                 }
-                Msg::Like => state.like(now),
-                Msg::Palette(p) => state.colors.update(p),
+                Msg::Like => state.like(ms(now)),
+                Msg::Palette(p) => {
+                    palette = Some(p);
+                    state.colors.update(p);
+                }
                 Msg::Crop(c) => crop = c,
             }
             continue;
@@ -964,11 +1006,14 @@ fn run(rx: Receiver<Msg>, tap: Arc<Tap>, busy: Arc<AtomicBool>, emit: impl Fn(Ev
         if next < now {
             next = now + frame;
         }
+        // Страница оригинала шлёт воркеру уровни звука, только пока трек играет.
         if playing {
             state.freq = Some(tap.bands());
         }
-        state.update(dt, now);
+        state.fire_timers(ms(now));
+        state.update(dt);
         if busy.swap(true, Ordering::AcqRel) {
+            skipped += 1;
             continue;
         }
         let fade = (now.duration_since(shown_at).as_secs_f32() * 1000.0 / FADE_MS).min(1.0);
@@ -980,7 +1025,11 @@ fn run(rx: Receiver<Msg>, tap: Arc<Tap>, busy: Arc<AtomicBool>, emit: impl Fn(Ev
         frames += 1;
         if frames >= 250 {
             let per_frame = spent / frames;
-            (spent, frames) = (Duration::ZERO, 0);
+            if crate::config::sandbox() {
+                let u = state.uniforms();
+                eprintln!("vibe: кадр {per_frame:?}, пропущено {skipped} из {}, звук {:?}, время {:.1}", frames + skipped, u.audio, u.time);
+            }
+            (spent, frames, skipped) = (Duration::ZERO, 0, 0);
             // Меньше 20 кадров в секунду — кадр считается дольше 50 мс.
             if per_frame > Duration::from_millis(50) {
                 slow += 1;
@@ -1038,6 +1087,112 @@ mod tests {
         assert!(cubic_bezier(0.42, 0.0, 0.58, 1.0, 0.0).abs() < 1e-4);
         assert!((cubic_bezier(0.42, 0.0, 0.58, 1.0, 1.0) - 1.0).abs() < 1e-4);
         assert!((cubic_bezier(0.42, 0.0, 0.58, 1.0, 0.5) - 0.5).abs() < 1e-3);
+    }
+
+    /// Тот же сценарий, что проигран настоящему воркеру оригинала (кадры монитора 60 Гц,
+    /// тикер 25 кадров/с, `Math.random() = 0.5`): покой, игра со звуком, лайк, снова покой.
+    /// Возвращает юниформы каждого кадра.
+    fn replay() -> Vec<Uniforms> {
+        const TRACK: [u8; 3] = [0x7C, 0x35, 0xC0];
+        let mut rng = Rng::fixed(0.5);
+        let mut state = State::new(&mut rng);
+        let mut out = Vec::new();
+        let (mut now, mut ticked) = (0f64, 0f64);
+        let mut run = |state: &mut State, ms: f64, now: &mut f64, out: &mut Vec<Uniforms>| {
+            let end = *now + ms;
+            while *now + 1000.0 / 60.0 <= end + 1e-9 {
+                *now += 1000.0 / 60.0;
+                state.fire_timers(*now);
+                let n = *now - ticked;
+                if n >= 40.0 - 0.1 {
+                    ticked = *now - n % 40.0;
+                    state.update(n);
+                    out.push(state.uniforms());
+                }
+            }
+        };
+        state.colors.update(Palette::DEFAULT);
+        state.idle();
+        run(&mut state, 2000.0, &mut now, &mut out);
+        state.colors.update(Palette::from_rgb(TRACK));
+        state.play();
+        for i in 0..100 {
+            let v = 0.5 + 0.5 * (i as f64 * 0.37).sin();
+            state.freq = Some([v, v * 0.8, v * 0.5]);
+            run(&mut state, 40.0, &mut now, &mut out);
+            if i == 40 {
+                state.like(now);
+            }
+        }
+        state.idle();
+        state.colors.update(Palette::DEFAULT);
+        run(&mut state, 3000.0, &mut now, &mut out);
+        out
+    }
+
+    /// Контрольные кадры из воркера оригинала: номер кадра, `vTime`, первый цвет `vColor`,
+    /// `vAudio[0]` и `vReact[0]`.
+    const ORIGINAL: &[(usize, f32, [f32; 3], f32, f32)] = &[
+        (10, 1800.1046, [0.93474954, 0.0, 1.0], 0.0, 0.0),
+        (30, 1800.2966, [0.99997926, 0.0, 1.0], 0.0, 0.0),
+        (70, 1800.9153, [0.5379114, 0.18797266, 0.77585095], 0.8395811, 0.0),
+        (90, 1801.5339, [0.48907268, 0.20783973, 0.7521603], 0.97871494, 0.0),
+        (110, 1802.1462, [0.489072, 0.20784, 0.75216], 0.91876316, 0.7),
+        (130, 1802.7712, [0.489072, 0.20784, 0.75216], 0.8589911, 3.0908723e-6),
+        (150, 1803.3721, [0.49701977, 0.20460694, 0.7560153], 0.76190007, 0.0),
+        (170, 1803.6339, [0.99111104, 0.0036159316, 0.99568814], 3.62753e-11, 0.0),
+        (210, 1804.0072, [1.0, 3.1552876e-24, 1.0], 0.0, 0.0),
+    ];
+
+    #[test]
+    fn state_matches_original_worker() {
+        let frames = replay();
+        for &(i, time, color, audio, react) in ORIGINAL {
+            let u = frames[i];
+            let close = |a: f32, b: f32| (a - b).abs() < 2e-5 * b.abs().max(1.0);
+            assert!(close(u.time, time), "кадр {i}: время {} вместо {time}", u.time);
+            for ch in 0..3 {
+                assert!(close(u.colors[0][ch], color[ch]), "кадр {i}: цвет {:?} вместо {color:?}", u.colors[0]);
+            }
+            assert!(close(u.audio[0], audio), "кадр {i}: звук {} вместо {audio}", u.audio[0]);
+            assert!(close(u.react[0], react), "кадр {i}: лайк {} вместо {react}", u.react[0]);
+        }
+    }
+
+    /// Полная сверка с записью воркера оригинала (её делает ref/trace.js из worker0.js):
+    /// `VIBE_TRACE=trace.json cargo test --release vibe::tests::trace -- --nocapture`.
+    #[test]
+    fn trace() {
+        let Ok(path) = std::env::var("VIBE_TRACE") else { return };
+        let json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let theirs = json["frames"].as_array().unwrap();
+        let ours = replay();
+        println!("кадров: оригинал {}, порт {}", theirs.len(), ours.len());
+        let list = |v: &serde_json::Value| -> Vec<f32> { v.as_array().unwrap().iter().map(|x| x.as_f64().unwrap() as f32).collect() };
+        let mut worst = [0f32; 4];
+        for (t, u) in theirs.iter().zip(&ours) {
+            let t = &t["u"];
+            worst[0] = worst[0].max((t["vTime"].as_f64().unwrap() as f32 - u.time).abs());
+            for (a, b) in list(&t["vColor[0]"]).iter().zip(u.colors.iter().flatten()) {
+                worst[1] = worst[1].max((a - b).abs());
+            }
+            for (a, b) in list(&t["vAudio[0]"]).iter().zip(&u.audio) {
+                worst[2] = worst[2].max((a - b).abs());
+            }
+            for (a, b) in list(&t["vReact[0]"]).iter().zip(&u.react) {
+                worst[3] = worst[3].max((a - b).abs());
+            }
+        }
+        println!("наибольшее расхождение: время {:e}, цвета {:e}, звук {:e}, лайк {:e}", worst[0], worst[1], worst[2], worst[3]);
+        assert_eq!(theirs.len(), ours.len());
+        if let Ok(n) = std::env::var("VIBE_TRACE_PRINT") {
+            let step: usize = n.parse().unwrap_or(20);
+            for (i, t) in theirs.iter().enumerate().filter(|(i, _)| i % step == step / 2) {
+                let t = &t["u"];
+                let c = list(&t["vColor[0]"]);
+                println!("        ({i}, {:?}, [{:?}, {:?}, {:?}], {:?}, {:?}),", t["vTime"].as_f64().unwrap() as f32, c[0], c[1], c[2], list(&t["vAudio[0]"])[0], list(&t["vReact[0]"])[0]);
+            }
+        }
     }
 
     /// Кадр для сверки с шейдером оригинала и замер скорости:

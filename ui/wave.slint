@@ -488,9 +488,10 @@ export component WavePage inherits Rectangle {
                 Rectangle {
                     x: 0;
                     width: parent.width * root.shown;
-                    // 10% белого поверх 8% плашки; между тиками плеера едет линейно за 0,3 с.
+                    // 10% белого поверх 8% плашки. Линейного перехода оригинала (0,3 с между
+                    // тиками плеера) здесь нет: сдвиг меньше пикселя, а окно из-за него
+                    // перерисовывалось бы без остановки.
                     background: #ffffff1a;
-                    animate width { duration: root.drag-progress >= 0 ? 0ms : Motion.t; easing: linear; }
                 }
             }
             Text {

@@ -13,6 +13,7 @@ use crate::images::Images;
 use crate::net::{tracks_word, Data, ListData, Net};
 use crate::player::{After, Cmd, ListKind, Loudness, Player, Repeat, Source, Status};
 use crate::sys;
+use slint::wgpu_30::wgpu;
 use slint::winit_030::{winit, WinitWindowAccessor};
 use slint::{Color, ComponentHandle, Image, Model, ModelRc, Rgba8Pixel, SharedPixelBuffer, SharedString, Timer, TimerMode, VecModel};
 use std::cell::{Cell, RefCell};
@@ -97,6 +98,58 @@ struct VibeAnim {
     failed: bool,
     /// Видимая часть холста в его пикселях; нули — страница её ещё не сообщила.
     crop: [usize; 4],
+    /// Окно рисует видеокарта: кадры пишутся в одну её текстуру.
+    texture: Option<VibeTexture>,
+}
+
+thread_local! {
+    /// Устройство и очередь wgpu, которыми Slint рисует окно. Пусто, если рисует процессор.
+    static WGPU: RefCell<Option<(wgpu::Device, wgpu::Queue)>> = const { RefCell::new(None) };
+}
+
+/// Холст пятна на видеокарте. Если отдавать Slint каждый кадр новой картинкой, Skia заводит
+/// под каждую свою текстуру и держит старые в кэше — это сотни мегабайт. Одна текстура,
+/// в которую кадр пишется на месте, памяти не копит.
+struct VibeTexture {
+    texture: wgpu::Texture,
+    /// Прямоугольник прошлого кадра (x, y, ширина, высота): перед новым его надо очистить.
+    painted: [usize; 4],
+}
+
+impl VibeTexture {
+    fn new(device: &wgpu::Device) -> VibeTexture {
+        let side = crate::vibe::SIZE as u32;
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("vibe"),
+            size: wgpu::Extent3d { width: side, height: side, depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            // Такого набора требует Slint от текстуры, которую ему отдают картинкой.
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        VibeTexture { texture, painted: [0; 4] }
+    }
+
+    fn write(&mut self, queue: &wgpu::Queue, frame: &crate::vibe::Frame) {
+        let put = |rect: [usize; 4], bytes: &[u8]| {
+            let [x, y, w, h] = rect.map(|v| v as u32);
+            queue.write_texture(
+                wgpu::TexelCopyTextureInfo { texture: &self.texture, mip_level: 0, origin: wgpu::Origin3d { x, y, z: 0 }, aspect: wgpu::TextureAspect::All },
+                bytes,
+                wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(4 * w), rows_per_image: Some(h) },
+                wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+            );
+        };
+        let [_, _, w, h] = self.painted;
+        if w > 0 && h > 0 {
+            put(self.painted, &vec![0u8; w * h * 4]);
+        }
+        put(frame.rect, frame.pixels.as_bytes());
+        self.painted = frame.rect;
+    }
 }
 
 /// Трейлер: треки звучат по 12,5 с с середины, потом следующий.
@@ -1713,6 +1766,7 @@ pub fn run(start_hidden: bool) -> Result<(), slint::PlatformError> {
     app.set_download_dir(music_dir(&cfg).display().to_string().into());
     app.set_download_flac(cfg.download_flac);
     app.set_log_volume(cfg.log_volume);
+    app.set_gpu(cfg.gpu_on());
     app.set_hidden_blocks(landing_ui::hidden_titles(&cfg).into());
     let places = Rc::new(Places::default());
     places.mini.set(cfg.mini_pos.map(|[x, y]| slint::PhysicalPosition::new(x, y)));
@@ -2135,6 +2189,17 @@ pub fn run(start_hidden: bool) -> Result<(), slint::PlatformError> {
         }
     });
 
+    // Если окно рисует видеокарта, Slint сообщает устройство wgpu: в его текстуру пойдут
+    // кадры пятна. Рендерер на процессоре этого вызова не поддерживает — тогда ошибка не важна.
+    let _ = ui.window().set_rendering_notifier(|state, api| match state {
+        slint::RenderingState::RenderingSetup => {
+            if let slint::GraphicsAPI::WGPU30 { device, queue, .. } = api {
+                WGPU.with(|g| *g.borrow_mut() = Some((device.clone(), queue.clone())));
+            }
+        }
+        slint::RenderingState::RenderingTeardown => WGPU.with(|g| *g.borrow_mut() = None),
+        _ => {}
+    });
     let _sandbox_input = crate::config::sandbox().then(|| sandbox_input(&ui));
     // Страница волны появилась: анимация запускается сразу, не дожидаясь тика плеера.
     app.on_vibe_mount(|| {
@@ -2940,11 +3005,19 @@ impl Ctx {
                 if lite {
                     sys::release_memory();
                 }
-                let mut st = self.st.borrow_mut();
-                // Смена режима — новая попытка для анимации волны, если она не успевала.
-                st.vibe.failed = false;
-                st.cfg.mode = if lite { "lite" } else { "smooth" }.to_string();
-                st.cfg.save();
+                let gpu = {
+                    let mut st = self.st.borrow_mut();
+                    // Смена режима — новая попытка для анимации волны, если она не успевала.
+                    st.vibe.failed = false;
+                    st.cfg.mode = if lite { "lite" } else { "smooth" }.to_string();
+                    st.cfg.save();
+                    st.cfg.gpu_on()
+                };
+                // Пока «Отрисовку видеокартой» не трогали руками, она идёт за режимом работы.
+                app.set_gpu(gpu);
+                if gpu != crate::config::GPU.load(Ordering::Relaxed) {
+                    self.toast(crate::i18n::tr(if gpu { "Видеокарта начнёт рисовать окно после перезапуска" } else { "Память освободится полностью после перезапуска" }));
+                }
             }
             "less-ai" => {
                 let on = !app.get_less_ai();
@@ -2972,6 +3045,18 @@ impl Ctx {
                 let mut st = self.st.borrow_mut();
                 st.cfg.log_volume = on;
                 st.cfg.save();
+            }
+            "gpu" => {
+                let on = !app.get_gpu();
+                app.set_gpu(on);
+                {
+                    let mut st = self.st.borrow_mut();
+                    st.cfg.gpu = Some(on);
+                    st.cfg.save();
+                }
+                if on != crate::config::GPU.load(Ordering::Relaxed) {
+                    self.toast(crate::i18n::tr("Применится после перезапуска приложения"));
+                }
             }
             "download-flac" => {
                 let on = !app.get_download_flac();
@@ -3755,6 +3840,7 @@ impl Ctx {
             handle.send(Msg::Mount(mounted));
             if !mounted {
                 app.set_vibe_frame(Image::default());
+                v.texture = None;
             }
         }
     }
@@ -3763,9 +3849,28 @@ impl Ctx {
         let app = ui.global::<App>();
         match event {
             crate::vibe::Event::Frame(frame) => {
-                let st = self.st.borrow();
-                if st.vibe.mounted {
-                    // Место кадра на холсте — долями его стороны.
+                let mut st = self.st.borrow_mut();
+                let gpu = WGPU.with(|g| g.borrow().clone());
+                if !st.vibe.mounted {
+                } else if let Some((device, queue)) = gpu {
+                    // Видеокарта: кадр пишется в текстуру, картинка в интерфейсе одна и та же.
+                    if st.vibe.texture.is_none() {
+                        let made = VibeTexture::new(&device);
+                        if let Ok(image) = Image::try_from(made.texture.clone()) {
+                            app.set_vibe_x(0.0);
+                            app.set_vibe_y(0.0);
+                            app.set_vibe_w(1.0);
+                            app.set_vibe_h(1.0);
+                            app.set_vibe_frame(image);
+                            st.vibe.texture = Some(made);
+                        }
+                    }
+                    if let Some(texture) = &mut st.vibe.texture {
+                        texture.write(&queue, &frame);
+                        ui.window().request_redraw();
+                    }
+                } else {
+                    // Процессор: место кадра на холсте — долями его стороны.
                     let side = crate::vibe::SIZE as f32;
                     let [x, y, w, h] = frame.rect.map(|v| v as f32 / side);
                     app.set_vibe_x(x);
@@ -3782,6 +3887,7 @@ impl Ctx {
                 let mut st = self.st.borrow_mut();
                 st.vibe.failed = true;
                 st.vibe.mounted = false;
+                st.vibe.texture = None;
                 app.set_vibe_anim(false);
                 app.set_vibe_frame(Image::default());
             }
