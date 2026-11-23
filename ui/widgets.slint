@@ -131,6 +131,140 @@ export global Icons {
     in property <image> upload;
 }
 
+// Переходы оригинала: `--ym-duration-transition` — 0,3 с, кривая CSS по умолчанию — ease
+// (в Slint без указания была бы linear). В «Лёгком» режиме всё мгновенно.
+export global Motion {
+    out property <duration> t: App.motion ? 300ms : 0ms;
+    // Проявление блока при смене трека: `fade-in .5s ease-in-out`.
+    out property <duration> fade: App.motion ? 500ms : 0ms;
+}
+
+// Круг от нажатия, как у кнопок оригинала (`createRipple`): диаметром в большую сторону
+// кнопки, за 0,6 с вырастает вчетверо и гаснет. Родитель обрезает его по своей форме.
+export component Ripple inherits Rectangle {
+    in property <color> ink: #ffffff3d;
+    // Номер нажатия и его место: каждое новое нажатие запускает круг заново.
+    in-out property <int> shot;
+    in-out property <length> px;
+    in-out property <length> py;
+    public function play(x: length, y: length) {
+        if App.motion {
+            self.px = x;
+            self.py = y;
+            self.shot += 1;
+        }
+    }
+    clip: true;
+    for id in [root.shot]: Rectangle {
+        property <float> p: root.shot > 0 ? 0 : 1;
+        property <length> d: max(root.width, root.height) * 4 * self.p;
+        init => { self.p = 1; }
+        animate p { duration: 600ms; easing: linear; }
+        visible: self.p < 1;
+        x: root.px - self.d / 2;
+        y: root.py - self.d / 2;
+        width: self.d;
+        height: self.d;
+        border-radius: self.d / 2;
+        background: root.ink.transparentize(self.p);
+    }
+}
+
+// Точка у играющего трека: `PlayingAnimation_bubble-out .7s ease-in-out infinite`,
+// масштаб 1,6 → 1 → 1,6.
+export component PlayingDot inherits Rectangle {
+    in property <bool> paused;
+    property <float> s: 1.6;
+    init => { self.s = 1; }
+    animate s { duration: App.motion && !root.paused ? 350ms : 0ms; iteration-count: -1; direction: alternate; easing: ease-in-out; }
+    width: 8px;
+    height: 8px;
+    Rectangle {
+        width: 8px * (App.motion && !root.paused ? root.s : 1);
+        height: self.width;
+        border-radius: self.width / 2;
+        background: Theme.controls-color-primary-default-enabled;
+    }
+}
+
+// Отклик значка на лайк, как `LikeButton_scale` и `LikeButton_unscale` оригинала:
+// лайк — масштаб 1 → 1,1 → 1 за 0,4 с, снятие — качание на пиксель влево-вправо за 0,5 с.
+export component LikePop inherits Rectangle {
+    in property <bool> liked;
+    out property <float> scale: 1;
+    out property <length> shift: phase == 1 ? -1px + 2px * a : phase == 2 ? 1px - 1px * b : 0px;
+    property <int> phase;
+    property <float> a;
+    property <float> b;
+    animate scale { duration: 200ms; easing: ease; }
+    animate a { duration: 250ms; easing: ease; }
+    animate b { duration: 250ms; easing: ease; }
+    changed liked => {
+        if App.motion {
+            if self.liked {
+                self.scale = 1.1;
+                back.running = true;
+            } else {
+                self.phase = 1;
+                self.a = 1;
+                half.running = true;
+            }
+        }
+    }
+    back := Timer {
+        interval: 200ms;
+        running: false;
+        triggered => {
+            self.running = false;
+            root.scale = 1;
+        }
+    }
+    half := Timer {
+        interval: 250ms;
+        running: false;
+        triggered => {
+            self.running = false;
+            if root.phase == 1 {
+                root.phase = 2;
+                root.b = 1;
+                self.running = true;
+            } else {
+                root.phase = 0;
+                root.a = 0;
+                root.b = 0;
+            }
+        }
+    }
+}
+
+// Блок, который проявляется заново при каждой смене `key` (например, трека):
+// `animation: fade-in .5s ease-in-out` на элементе с React-ключом.
+export component FadeOnKey inherits Rectangle {
+    in property <string> key;
+    in property <duration> duration: Motion.fade;
+    out property <float> k: shown;
+    property <float> shown: 1;
+    property <bool> snap;
+    // Сначала мгновенно в ноль, со следующего кадра — плавно к единице.
+    animate shown { duration: root.snap ? 0ms : root.duration; easing: ease-in-out; }
+    changed key => {
+        if App.motion {
+            self.snap = true;
+            self.shown = 0;
+            go.running = true;
+        }
+    }
+    go := Timer {
+        interval: 16ms;
+        running: false;
+        triggered => {
+            self.running = false;
+            root.snap = false;
+            root.shown = 1;
+        }
+    }
+}
+
 export component Icon inherits Image {
     in property <length> size: 24px;
     width: size;
@@ -151,7 +285,7 @@ export component IconButton inherits Rectangle {
         source: icon;
         size: size;
         colorize: !enabled ? Theme.controls-color-primary-default-disabled : ta.has-hover ? hover-color : tint;
-        animate colorize { duration: App.motion ? Theme.duration-transition : 0ms; }
+        animate colorize { duration: App.motion ? Theme.duration-transition : 0ms; easing: ease; }
     }
     ta := TouchArea {
         enabled: enabled;
@@ -173,7 +307,7 @@ export component CircleButton inherits Rectangle {
     background: ta.pressed ? Theme.controls-color-secondary-default-pressed
         : ta.has-hover ? Theme.controls-color-secondary-default-hovered
         : Theme.controls-color-secondary-default-enabled;
-    animate background { duration: App.motion ? Theme.duration-transition : 0ms; }
+    animate background { duration: App.motion ? Theme.duration-transition : 0ms; easing: ease; }
     Icon { source: icon; size: icon-size; colorize: icon-color; }
     ta := TouchArea {
         mouse-cursor: MouseCursor.pointer;
@@ -193,7 +327,7 @@ export component PillButton inherits Rectangle {
     background: primary
         ? (ta.pressed ? Theme.controls-color-primary-default-pressed : ta.has-hover ? Theme.controls-color-primary-default-hovered : Theme.controls-color-primary-default-enabled)
         : (ta.pressed ? Theme.controls-color-secondary-default-pressed : ta.has-hover ? Theme.controls-color-secondary-default-hovered : Theme.controls-color-secondary-default-enabled);
-    animate background { duration: App.motion ? Theme.duration-transition : 0ms; }
+    animate background { duration: App.motion ? Theme.duration-transition : 0ms; easing: ease; }
     HorizontalLayout {
         alignment: center;
         spacing: 4px;
@@ -303,7 +437,7 @@ export component ArtistLinks inherits Rectangle {
             font-size: root.font-size;
             font-weight: 500;
             color: ta.has-hover && root.links ? root.ink-hover : root.ink;
-            animate color { duration: App.motion ? Theme.duration-transition : 0ms; }
+            animate color { duration: App.motion ? Theme.duration-transition : 0ms; easing: ease; }
             ta := TouchArea {
                 enabled: root.links;
                 mouse-cursor: MouseCursor.pointer;
@@ -353,7 +487,7 @@ export component NavCircle inherits Rectangle {
     height: 32px;
     border-radius: 16px;
     background: !enabled ? Theme.controls-color-secondary-default-disabled : ta.has-hover ? Theme.controls-color-secondary-default-hovered : Theme.controls-color-secondary-default-enabled;
-    animate background { duration: App.motion ? 150ms : 0ms; }
+    animate background { duration: App.motion ? Theme.duration-transition : 0ms; easing: ease; }
     Icon { source: icon; size: 20px; colorize: enabled ? Theme.controls-color-secondary-on-default-enabled : Theme.controls-color-secondary-on-default-disabled; }
     ta := TouchArea {
         enabled: root.enabled;
@@ -372,9 +506,11 @@ export component NavArrows inherits HorizontalLayout {
 // Плавное появление содержимого: страницы, меню, окна. Работает при создании элемента.
 export component Fade inherits Rectangle {
     in property <length> rise: 0px;
+    in property <duration> duration: App.motion ? 220ms : 0ms;
+    in property <easing> curve: ease-out;
     property <float> k: App.motion ? 0 : 1;
     init => { k = 1; }
-    animate k { duration: App.motion ? 220ms : 0ms; easing: ease-out; }
+    animate k { duration: root.duration; easing: root.curve; }
     Rectangle {
         y: (1 - root.k) * root.rise;
         width: root.width;

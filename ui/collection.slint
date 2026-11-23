@@ -214,7 +214,7 @@ export component CollectionPage inherits Rectangle {
                         height: 186px;
                         border-radius: Theme.radius-size-s;
                         background: new-ta.has-hover ? Theme.controls-color-secondary-default-enabled : Theme.controls-color-secondary-default-disabled;
-                        animate background { duration: App.motion ? 150ms : 0ms; }
+                        animate background { duration: App.motion ? Theme.duration-transition : 0ms; easing: ease; }
                         Icon { source: Icons.add-large; size: 40px; colorize: Theme.controls-color-primary-text-enabled; }
                     }
                     Text {

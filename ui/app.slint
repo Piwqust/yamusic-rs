@@ -1,7 +1,7 @@
 // Главное окно: своя рамка, навбар, страницы, нижний плеер и всплывающие слои поверх.
 
 import { Theme } from "theme.slint";
-import { Icons, Icon, IconButton, CircleButton, PillButton, Cover, Shimmer, Fade } from "widgets.slint";
+import { Motion, Icons, Icon, IconButton, CircleButton, PillButton, Cover, Shimmer, Fade } from "widgets.slint";
 import { Navbar } from "navbar.slint";
 import { PlayerBar, MiniPlayer } from "playerbar.slint";
 import { ListPage } from "list.slint";
@@ -27,7 +27,7 @@ component CaptionButton inherits Rectangle {
     width: 46px;
     height: 32px;
     background: ta.has-hover ? (kind == 2 ? #c42b1c : Theme.controls-color-secondary-default-hovered) : transparent;
-    animate background { duration: App.motion ? 150ms : 0ms; }
+    animate background { duration: App.motion ? Theme.duration-transition : 0ms; easing: ease; }
     property <brush> ink: ta.has-hover && kind == 2 ? #fff : Theme.controls-color-secondary-on-outline-enabled;
     if kind == 0: Rectangle {
         width: 10px; height: 1px;
@@ -95,12 +95,41 @@ export component AppWindow inherits Window {
     // Фон «Моей волны»: 16 ступеней палитры трека справа налево, как у оригинала.
     // На паузе все ступени чёрные: сплошная заливка вместо градиента на всё окно.
     if new-vibe: Rectangle {
-        property <bool> flat: App.vibe-stops[0] == App.vibe-stops[15] && App.vibe-stops[0] == App.vibe-stops[7];
-        background: flat ? App.vibe-stops[0] : @linear-gradient(270deg,
-            App.vibe-stops[0] 0%, App.vibe-stops[1] 10%, App.vibe-stops[2] 19%, App.vibe-stops[3] 25%,
-            App.vibe-stops[4] 30%, App.vibe-stops[5] 34%, App.vibe-stops[6] 37%, App.vibe-stops[7] 40%,
-            App.vibe-stops[8] 42%, App.vibe-stops[9] 44%, App.vibe-stops[10] 47%, App.vibe-stops[11] 50%,
-            App.vibe-stops[12] 54%, App.vibe-stops[13] 60%, App.vibe-stops[14] 67%, App.vibe-stops[15] 75%);
+        // Каждая ступень меняет цвет за 0,3 с, как `transition: --vibe-gradient-stop-N` оригинала.
+        property <color> s0: App.vibe-stops[0];
+        animate s0 { duration: Motion.t; easing: ease; }
+        property <color> s1: App.vibe-stops[1];
+        animate s1 { duration: Motion.t; easing: ease; }
+        property <color> s2: App.vibe-stops[2];
+        animate s2 { duration: Motion.t; easing: ease; }
+        property <color> s3: App.vibe-stops[3];
+        animate s3 { duration: Motion.t; easing: ease; }
+        property <color> s4: App.vibe-stops[4];
+        animate s4 { duration: Motion.t; easing: ease; }
+        property <color> s5: App.vibe-stops[5];
+        animate s5 { duration: Motion.t; easing: ease; }
+        property <color> s6: App.vibe-stops[6];
+        animate s6 { duration: Motion.t; easing: ease; }
+        property <color> s7: App.vibe-stops[7];
+        animate s7 { duration: Motion.t; easing: ease; }
+        property <color> s8: App.vibe-stops[8];
+        animate s8 { duration: Motion.t; easing: ease; }
+        property <color> s9: App.vibe-stops[9];
+        animate s9 { duration: Motion.t; easing: ease; }
+        property <color> s10: App.vibe-stops[10];
+        animate s10 { duration: Motion.t; easing: ease; }
+        property <color> s11: App.vibe-stops[11];
+        animate s11 { duration: Motion.t; easing: ease; }
+        property <color> s12: App.vibe-stops[12];
+        animate s12 { duration: Motion.t; easing: ease; }
+        property <color> s13: App.vibe-stops[13];
+        animate s13 { duration: Motion.t; easing: ease; }
+        property <color> s14: App.vibe-stops[14];
+        animate s14 { duration: Motion.t; easing: ease; }
+        property <color> s15: App.vibe-stops[15];
+        animate s15 { duration: Motion.t; easing: ease; }
+        property <bool> flat: s0 == s15 && s0 == s7;
+        background: flat ? s0 : @linear-gradient(270deg, s0 0%, s1 10%, s2 19%, s3 25%, s4 30%, s5 34%, s6 37%, s7 40%, s8 42%, s9 44%, s10 47%, s11 50%, s12 54%, s13 60%, s14 67%, s15 75%);
     }
 
     navbar := Navbar {
@@ -177,7 +206,7 @@ export component AppWindow inherits Window {
                 height: 32px;
                 border-radius: 16px;
                 background: close-ta.has-hover ? Theme.controls-color-secondary-default-hovered : #0000001a;
-                animate background { duration: App.motion ? 150ms : 0ms; }
+                animate background { duration: App.motion ? Theme.duration-transition : 0ms; easing: ease; }
                 Icon { source: Icons.close-small; size: 20px; colorize: Theme.controls-color-primary-text-enabled-variant; }
                 close-ta := TouchArea { mouse-cursor: MouseCursor.pointer; clicked => { App.cover-open = false; } }
             }
@@ -271,14 +300,24 @@ export component AppWindow inherits Window {
     if !App.maximized: ResizeEdge { dir: 3; x: parent.width - 8px; y: parent.height - 8px; width: 8px; height: 8px; }
 
     // Уведомление, как BaseNotification: полупрозрачная плашка, обложка 40 и текст.
-    if App.toast != "": Rectangle {
+    // Появление и уход — переход Slide из react-toastify: 0,7 с, снизу въезжает на 110% своей
+    // высоты, уходит вниз на 500 px. Прозрачность не меняется.
+    Rectangle {
         property <length> cover-w: App.toast-has-cover ? 40px + 8px : 0px;
-        property <float> k: App.motion ? 0 : 1;
-        init => { k = 1; }
-        animate k { duration: App.motion ? 250ms : 0ms; easing: ease-out; }
-        opacity: k;
+        property <string> now: App.toast;
+        property <string> kept;
+        property <bool> on: now != "";
+        property <float> k: on ? 1 : 0;
+        animate k { duration: App.motion ? 700ms : 0ms; easing: ease; }
+        changed now => {
+            if now != "" {
+                kept = now;
+            }
+        }
+        init => { kept = now; }
+        visible: k > 0.001;
         x: (parent.width - self.width) / 2;
-        y: parent.height - (App.page == Page.wave ? 96px : 140px) + (1 - k) * 16px;
+        y: parent.height - (App.page == Page.wave ? 96px : 140px) + (1 - k) * (on ? 1.1 * self.height : 500px);
         width: min(parent.width * 0.9, max(App.toast-has-cover ? 360px : 0px, toast-text.preferred-width + cover-w + 32px));
         height: 56px;
         border-radius: Theme.radius-size-l;
@@ -298,7 +337,7 @@ export component AppWindow inherits Window {
         toast-text := Text {
             x: 16px + cover-w - (App.toast-has-cover ? 8px : 0px);
             width: parent.width - self.x - 16px;
-            text: App.toast;
+            text: parent.kept;
             overflow: elide;
             vertical-alignment: center;
             color: Theme.controls-color-primary-text-enabled-variant;
@@ -310,12 +349,12 @@ export component AppWindow inherits Window {
     // «Доступна версия …» — как NotificationUpdate оригинала: та же плашка уведомления,
     // справа кнопка «Обновить». Висит, пока не обновятся.
     if App.update-version != "": Rectangle {
+        // Сверху по центру — `slideInDown`: 0,7 с, с −110% своей высоты.
         property <float> k: App.motion ? 0 : 1;
         init => { k = 1; }
-        animate k { duration: App.motion ? 250ms : 0ms; easing: ease-out; }
-        opacity: k;
+        animate k { duration: App.motion ? 700ms : 0ms; easing: ease; }
         x: (parent.width - self.width) / 2;
-        y: Theme.spacer-size-m - (1 - k) * 16px;
+        y: Theme.spacer-size-m - (1 - k) * (1.1 * self.height + Theme.spacer-size-m);
         width: min(parent.width * 0.9, update-text.preferred-width + Theme.spacer-size-l + Theme.spacer-size-m + changes.width + Theme.spacer-size-m + update-btn.width + Theme.spacer-size-xxs);
         height: update-btn.height + 2 * Theme.spacer-size-xxs;
         border-radius: Theme.radius-size-l;

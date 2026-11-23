@@ -1,7 +1,7 @@
 // «Моя волна»: колесо вайбов, кнопка запуска и фоновое пятно в цветах трека.
 
 import { Theme } from "theme.slint";
-import { Icons, Icon, Cover } from "widgets.slint";
+import { Icons, Icon, Cover, Motion, Ripple, FadeOnKey, LikePop, Fade } from "widgets.slint";
 import { T, App, WheelEntry } from "state.slint";
 import { VolumePopup } from "popups.slint";
 
@@ -14,14 +14,64 @@ component GlassButton inherits Rectangle {
     width: 48px;
     height: 48px;
     border-radius: self.height / 2;
-    background: ta.has-hover && enabled ? #ffffff24 : #ffffff14;
-    animate background { duration: App.motion ? Theme.duration-transition : 0ms; }
-    Icon { source: icon; size: icon-size; colorize: enabled ? (ta.has-hover ? #ffffffe6 : #ffffffb3) : #ffffff14; }
+    // Фон оригинала: 8% белого, под курсором 10%; переход 0,3 с ease.
+    background: ta.has-hover && enabled ? #ffffff1a : #ffffff14;
+    animate background { duration: Motion.t; easing: ease; }
+    // Значок может качнуться или вырасти (лайк): сдвиг и масштаб задаёт владелец.
+    in property <float> icon-scale: 1;
+    in property <length> icon-shift: 0px;
+    rip := Ripple { border-radius: parent.border-radius; ink: #ffffff17; }
+    Icon {
+        x: (parent.width - self.width) / 2 + root.icon-shift;
+        source: icon;
+        size: icon-size;
+        transform-scale: root.icon-scale;
+        colorize: enabled ? (ta.has-hover ? #ffffffe6 : #ffffffb3) : #ffffff14;
+        animate colorize { duration: Motion.t; easing: ease; }
+    }
     ta := TouchArea {
         enabled: enabled;
         mouse-cursor: MouseCursor.pointer;
-        clicked => { root.clicked(); }
+        clicked => {
+            rip.play(self.mouse-x, self.mouse-y);
+            root.clicked();
+        }
     }
+}
+
+// Главная кнопка волны: жёлтая «играть», на время игры — полупрозрачная «пауза»
+// (`VibePlayerControls_playButton_playing`). Под курсором растёт до 1,05, как `PlayButton`.
+component VibePlay inherits Rectangle {
+    in property <bool> playing;
+    callback clicked;
+    width: 64px;
+    height: 64px;
+    border-radius: 32px;
+    background: playing ? #ffffff40 : ta.has-hover ? Theme.controls-color-primary-default-hovered : #ffff00;
+    animate background { duration: Motion.t; easing: ease; }
+    transform-scale: ta.has-hover ? 1.05 : 1;
+    animate transform-scale { duration: Motion.t; easing: ease; }
+    Icon {
+        source: playing ? Icons.pause-big : Icons.play-big;
+        size: 32px;
+        colorize: playing ? #e6e6e6 : #000;
+        animate colorize { duration: Motion.t; easing: ease; }
+    }
+    ta := TouchArea { mouse-cursor: MouseCursor.pointer; clicked => { root.clicked(); } }
+}
+
+// «Назад» и «вперёд» у кнопки волны: `transition: color .3s`.
+component SkipButton inherits Rectangle {
+    in property <image> icon;
+    callback clicked;
+    width: 24px;
+    Icon {
+        source: icon;
+        size: 24px;
+        colorize: ta.has-hover ? #ffffffe6 : #ffffff80;
+        animate colorize { duration: Motion.t; easing: ease; }
+    }
+    ta := TouchArea { mouse-cursor: MouseCursor.pointer; clicked => { root.clicked(); } }
 }
 
 // Слот колеса. `p` — расстояние от центра в слайдах; сдвиг и прозрачность — формула оригинала.
@@ -46,8 +96,10 @@ component WheelSlot inherits Rectangle {
     y: yc - 40px;
     width: 334px;
     height: 80px;
+    // Проявление слота: `WheelDesktopItem_fade-in` за 0,3 с ease-in-out.
+    in property <float> appear: 1;
     // Прозрачность раздаётся детям: opacity на слоте — слой на каждый слот в каждом кадре.
-    property <float> alpha: max(0, edge) * (1 - 0.86 * s * s * (3 - 2 * s));
+    property <float> alpha: appear * max(0, edge) * (1 - 0.86 * s * s * (3 - 2 * s));
     visible: alpha > 0.004;
 
     Cover {
@@ -101,6 +153,7 @@ component FitTitle inherits Rectangle {
     in property <string> text;
     in property <string> longest;
     in property <bool> link;
+    in property <float> alpha: 1;
     callback clicked;
 
     property <length> w: root.width;
@@ -141,7 +194,7 @@ component FitTitle inherits Rectangle {
         font-family: "YS Music Headline";
         font-size: root.size;
         font-weight: 700;
-        color: #ffffff;
+        color: #ffffff.with-alpha(root.alpha);
     }
     line := Text { visible: false; text: root.text; font-family: "YS Music Headline"; font-weight: 700; font-size: root.size; }
     // Кликабельна только сама надпись, а не пустое место вокруг.
@@ -167,7 +220,7 @@ component ContextPill inherits Rectangle {
         width: pill-w;
         border-radius: 24px;
         background: pill-ta.pressed ? #00000099 : pill-ta.has-hover ? #00000066 : #0000004d;
-        animate background { duration: App.motion ? Theme.duration-transition : 0ms; }
+        animate background { duration: Motion.t; easing: ease-in-out; }
         label := Text {
             x: 24px;
             width: parent.width - 48px;
@@ -190,8 +243,16 @@ component ContextPill inherits Rectangle {
         width: btn;
         border-radius: btn / 2;
         background: x-ta.pressed ? #00000099 : x-ta.has-hover ? #00000066 : #0000004d;
-        animate background { duration: App.motion ? Theme.duration-transition : 0ms; }
-        Icon { source: Icons.close-small; size: 24px; colorize: x-ta.has-hover ? #ffffffe6 : #ffffff80; }
+        animate background { duration: Motion.t; easing: ease-in-out; }
+        Icon {
+            source: Icons.close-small;
+            size: 24px;
+            colorize: x-ta.has-hover ? #ffffffe6 : #ffffff80;
+            animate colorize { duration: Motion.t; easing: ease; }
+            // `VibeResetButton_icon`: под курсором чуть крупнее.
+            transform-scale: x-ta.has-hover || pill-ta.has-hover ? 1.02 : 1;
+            animate transform-scale { duration: Motion.t; easing: ease-in-out; }
+        }
         x-ta := TouchArea {
             mouse-cursor: MouseCursor.pointer;
             clicked => { root.reset(); }
@@ -218,8 +279,34 @@ export component WavePage inherits Rectangle {
     property <float> drag-progress: -1;
     property <float> shown: drag-progress >= 0 ? drag-progress : progress;
 
-    // Пятно: картинка оригинала, перекрашенная под трек.
-    Image {
+    // Холст анимации оригинала: квадрат в 250% ширины блока с названием, по его центру.
+    property <length> canvas: text-w * 2.5;
+    property <length> canvas-x: cx - canvas / 2;
+    property <length> canvas-y: 284px + db - canvas / 2;
+    // Видимая часть холста в долях: за краем страницы шейдер считать незачем.
+    property <{x0: float, y0: float, x1: float, y1: float}> crop: {
+        x0: max(0, -canvas-x / canvas),
+        y0: max(0, -canvas-y / canvas),
+        x1: min(1, (root.width - canvas-x) / canvas),
+        y1: min(1, (root.height - canvas-y) / canvas),
+    };
+    changed crop => { App.vibe-crop(crop.x0, crop.y0, crop.x1, crop.y1); }
+    init => {
+        App.vibe-crop(crop.x0, crop.y0, crop.x1, crop.y1);
+        App.vibe-mount();
+    }
+
+    // Пятно: шейдер оригинала. Прозрачность 0,8 и проявление за секунду уже в кадре.
+    if App.vibe-anim: Image {
+        x: canvas-x + canvas * App.vibe-x;
+        y: canvas-y + canvas * App.vibe-y;
+        width: canvas * App.vibe-w;
+        height: canvas * App.vibe-h;
+        source: App.vibe-frame;
+        image-fit: fill;
+    }
+    // «Лёгкий» режим: картинка оригинала, перекрашенная под трек.
+    if !App.vibe-anim: Image {
         x: cx - blob / 2;
         y: 284px + db - blob / 2;
         width: blob;
@@ -242,15 +329,24 @@ export component WavePage inherits Rectangle {
         property <length> slide-h: self.height / per-view;
         property <length> wrap-x: self.width - min(self.width * 0.8, 600px);
         in-out property <float> offset: 0;
-        animate offset { duration: App.motion ? 220ms : 0ms; easing: ease-out; }
+        // Клик по дальнему слайду — `slideToLoop` Swiper: 0,3 с ease. Колёсико у оригинала
+        // в режиме freeMode двигает ленту сразу, без перехода.
+        property <bool> glide;
+        animate offset { duration: App.motion && glide ? 300ms : 0ms; easing: ease; }
         property <int> base: floor(offset);
         property <float> frac: offset - base;
+        // Слайды проявляются, когда лента загрузилась.
+        property <float> appear: App.motion ? 0 : 1;
+        animate appear { duration: Motion.t; easing: ease-in-out; }
+        changed n => { self.appear = self.n > 0 ? 1 : 0; }
+        init => { self.appear = self.n > 0 ? 1 : 0; }
 
         TouchArea {
             scroll-event(e) => {
-                // Колёсико: 100 px оригинала на щелчок × чувствительность 0,3.
-                // Щелчок колёсика (60 px) — один слайд, как у Swiper оригинала.
-                wheel.offset = wheel.offset - e.delta-y / 60px;
+                // Щелчок колёсика (60 px здесь) — 100 px у оригинала, чувствительность
+                // Swiper 0,3: лента сдвигается на 30 px.
+                wheel.glide = false;
+                wheel.offset = wheel.offset - (e.delta-y / 60px) * 30px / wheel.slide-h;
                 accept
             }
         }
@@ -265,8 +361,10 @@ export component WavePage inherits Rectangle {
                 wrap-x: wheel.wrap-x;
                 area-h: wheel.height;
                 area-w: wheel.width;
+                appear: wheel.appear;
                 clicked => {
                     if abs(self.p) >= 2.5 {
+                        wheel.glide = true;
                         wheel.offset = wheel.offset + self.p;
                     } else {
                         App.play-wheel(self.idx);
@@ -288,12 +386,26 @@ export component WavePage inherits Rectangle {
         font-weight: 700;
         color: #ffff00;
     }
-    if App.has-track && App.wave-context: ContextPill {
+    // `VibeResetButton_fade-in .5s ease-in-out`.
+    if App.has-track && App.wave-context: Fade {
         x: text-x;
         y: 24px;
         width: text-w;
-        text: App.source-title;
-        reset => { App.reset-wave(); }
+        height: 48px;
+        duration: Motion.fade;
+        curve: ease-in-out;
+        ContextPill {
+            width: parent.width;
+            text: App.source-title;
+            reset => { App.reset-wave(); }
+        }
+    }
+
+    // Название и исполнитель проявляются заново с каждым треком.
+    meta-fade := FadeOnKey {
+        width: 0;
+        height: 0;
+        key: App.title + "\n" + App.artists;
     }
 
     // «Моя волна» без трека и на паузе — замер оригинала: 103 px в одну строку.
@@ -309,16 +421,10 @@ export component WavePage inherits Rectangle {
         color: #ffffff;
     }
 
-    if !App.has-track: Rectangle {
+    if !App.has-track: VibePlay {
         x: cx - 32px;
         y: 580px + dp;
-        width: 64px;
-        height: 64px;
-        border-radius: 32px;
-        background: idle-ta.has-hover ? Theme.controls-color-primary-default-hovered : #ffff00;
-        animate background { duration: App.motion ? 150ms : 0ms; }
-        Icon { source: Icons.play-big; size: 32px; colorize: #000; }
-        idle-ta := TouchArea { mouse-cursor: MouseCursor.pointer; clicked => { App.play-pause(); } }
+        clicked => { App.play-pause(); }
     }
     if !App.has-track: Icon { x: cx - 76px - 12px; y: 600px + dp; source: Icons.prev; size: 24px; colorize: #ffffff14; }
     if !App.has-track: Icon { x: cx - 76px + 140px; y: 600px + dp; source: Icons.next; size: 24px; colorize: #ffffff14; }
@@ -332,10 +438,19 @@ export component WavePage inherits Rectangle {
         text: App.artists;
         longest: App.artists-longest;
         link: App.artist-list.length > 0;
+        alpha: meta-fade.k;
         clicked => { App.open-current-artist(0); }
     }
 
     // Обложка открывает альбом трека, а не плеер на весь экран.
+    // Обложка проявляется за секунду (`AlbumCover_fade-in 1s ease-in-out`), под курсором
+    // растёт до 1,02 (`AlbumCover_button:hover`).
+    cover-fade := FadeOnKey {
+        width: 0;
+        height: 0;
+        key: App.title + "\n" + App.artists;
+        duration: App.motion ? 1000ms : 0ms;
+    }
     if App.has-track: Cover {
         x: cx - 48px;
         y: 384px + dp;
@@ -343,7 +458,10 @@ export component WavePage inherits Rectangle {
         height: 96px;
         radius: Theme.radius-size-m;
         source: App.cover;
-        TouchArea { mouse-cursor: MouseCursor.pointer; clicked => { App.open-current-album(); } }
+        alpha: cover-fade.k;
+        transform-scale: cover-ta.has-hover ? 1.02 : 1;
+        animate transform-scale { duration: Motion.t; easing: ease; }
+        cover-ta := TouchArea { mouse-cursor: MouseCursor.pointer; clicked => { App.open-current-album(); } }
     }
 
     if App.has-track: HorizontalLayout {
@@ -364,12 +482,14 @@ export component WavePage inherits Rectangle {
             bridge := TouchArea {
                 y: -12px;
                 height: 12px;
-                visible: parent.open;
+                visible: vol-pop.visible;
             }
             vol-pop := VolumePopup {
                 x: (parent.width - self.width) / 2;
                 y: -12px - self.height;
-                visible: parent.open;
+                opacity: parent.open ? 1 : 0;
+                animate opacity { delay: App.motion ? 200ms : 0ms; duration: Motion.t; easing: ease; }
+                visible: self.opacity > 0.01;
                 glass: true;
             }
         }
@@ -386,7 +506,9 @@ export component WavePage inherits Rectangle {
                 Rectangle {
                     x: 0;
                     width: parent.width * root.shown;
-                    background: #ffffff14;
+                    // 10% белого поверх 8% плашки; между тиками плеера едет линейно за 0,3 с.
+                    background: #ffffff1a;
+                    animate width { duration: root.drag-progress >= 0 ? 0ms : Motion.t; easing: linear; }
                 }
             }
             Text {
@@ -397,7 +519,7 @@ export component WavePage inherits Rectangle {
                 font-family: "YS Music Headline";
                 font-size: Theme.font-size-headline-xs;
                 font-weight: 700;
-                color: #ffffffb3;
+                color: #ffffffb3.with-alpha(0.7 * meta-fade.k);
             }
             pill-ta := TouchArea {
                 mouse-cursor: MouseCursor.pointer;
@@ -417,23 +539,35 @@ export component WavePage inherits Rectangle {
                 }
             }
             // Подсказка времени: у бегунка при перемотке, у курсора при наведении.
-            if pill-ta.has-hover || root.drag-progress >= 0: Rectangle {
+            // `VibePlayerbarTimecodeWithTooltip_timecode`: проявляется за 0,3 с ease-in-out.
+            Rectangle {
+                property <bool> on: pill-ta.has-hover || root.drag-progress >= 0;
+                property <float> a: self.on ? 1 : 0;
+                animate a { duration: Motion.t; easing: ease-in-out; }
                 property <float> at: root.drag-progress >= 0 ? root.drag-progress : max(0, min(1, pill-ta.mouse-x / pill-ta.width));
+                visible: self.a > 0.01;
                 x: parent.width * at - self.width / 2;
                 y: -32px;
                 width: tip.preferred-width + 16px;
                 height: 24px;
                 border-radius: 12px;
-                background: #000000b3;
+                background: #000000.with-alpha(0.7 * self.a);
                 tip := Text {
                     text: App.format-time(at * App.duration) + " / " + App.format-time(App.duration);
                     font-size: Theme.font-size-label-xs;
                     font-weight: 500;
-                    color: #ffffffe6;
+                    color: #ffffff.with-alpha(0.9 * parent.a);
                 }
             }
         }
-        GlassButton { y: 8px; icon: App.liked ? Icons.liked : Icons.like; clicked => { App.like(); } }
+        GlassButton {
+            y: 8px;
+            icon: App.liked ? Icons.liked : Icons.like;
+            icon-scale: like-pop.scale;
+            icon-shift: like-pop.shift;
+            clicked => { App.like(); }
+            like-pop := LikePop { width: 0; height: 0; liked: App.liked; }
+        }
         more := GlassButton {
             y: 8px;
             icon: Icons.more;
@@ -447,25 +581,9 @@ export component WavePage inherits Rectangle {
         width: 176px;
         height: 64px;
         spacing: 32px;
-        Rectangle {
-            width: 24px;
-            Icon { source: Icons.prev; size: 24px; colorize: prev-ta.has-hover ? #ffffffe6 : #ffffff80; }
-            prev-ta := TouchArea { mouse-cursor: MouseCursor.pointer; clicked => { App.prev(); } }
-        }
-        Rectangle {
-            width: 64px;
-            height: 64px;
-            border-radius: 32px;
-            background: play-ta.has-hover ? Theme.controls-color-primary-default-hovered : #ffff00;
-            animate background { duration: App.motion ? 150ms : 0ms; }
-            Icon { source: App.playing ? Icons.pause-big : Icons.play-big; size: 32px; colorize: #000; }
-            play-ta := TouchArea { mouse-cursor: MouseCursor.pointer; clicked => { App.play-pause(); } }
-        }
-        Rectangle {
-            width: 24px;
-            Icon { source: Icons.next; size: 24px; colorize: next-ta.has-hover ? #ffffffe6 : #ffffff80; }
-            next-ta := TouchArea { mouse-cursor: MouseCursor.pointer; clicked => { App.next(); } }
-        }
+        SkipButton { icon: Icons.prev; clicked => { App.prev(); } }
+        VibePlay { playing: App.playing; clicked => { App.play-pause(); } }
+        SkipButton { icon: Icons.next; clicked => { App.next(); } }
     }
 
 

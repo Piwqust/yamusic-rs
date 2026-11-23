@@ -1,7 +1,7 @@
 // Строки: трек, заголовок блока, вкладка, позиция чарта.
 
 import { Theme } from "theme.slint";
-import { Icons, Icon, Cover, ArtistLinks, ExplicitMark } from "widgets.slint";
+import { Icons, Icon, Cover, ArtistLinks, ExplicitMark, Motion, Ripple, PlayingDot, LikePop } from "widgets.slint";
 import { App, TrackItem, ChartRow } from "state.slint";
 
 // Строка трека: обложка 40, название и исполнитель 14/500, лайк 40 и длительность справа.
@@ -22,9 +22,31 @@ export component TrackRow inherits Rectangle {
     // При наведении вместо длительности — «…» с меню трека, как в оригинале.
     out property <bool> hot: ta.has-hover || like-ta.has-hover || more-ta.has-hover || bucket-ta.has-hover;
     background: current || hot ? Theme.controls-color-secondary-default-disabled : transparent;
+    // Наведение: кнопки строки и затемнение обложки проявляются за 0,3 с
+    // (`PlayButtonWithCover_control`, `CommonControlsBar_item`).
+    property <float> heat: hot ? 1 : 0;
+    animate heat { duration: Motion.t; easing: ease; }
+    // Круг от нажатия: `CommonTrack_ripple`. Создаётся после первого клика по строке.
+    property <int> shot;
+    property <length> shot-x;
+    property <length> shot-y;
+    if root.shot > 0: Ripple {
+        border-radius: root.border-radius;
+        ink: #ffffff3d;
+        shot: root.shot;
+        px: root.shot-x;
+        py: root.shot-y;
+    }
     ta := TouchArea {
         mouse-cursor: MouseCursor.pointer;
-        clicked => { root.play(); }
+        clicked => {
+            if App.motion {
+                root.shot-x = self.mouse-x;
+                root.shot-y = self.mouse-y;
+                root.shot += 1;
+            }
+            root.play();
+        }
     }
     Cover {
         x: 8px;
@@ -33,9 +55,17 @@ export component TrackRow inherits Rectangle {
         height: 40px;
         radius: Theme.radius-size-s;
         source: item.cover;
-        if hot || current: Rectangle {
-            background: #00000066;
-            Icon { source: current && App.playing ? Icons.pause-filled-xs : Icons.play-filled-xs; size: 24px; colorize: #e6e6e6; }
+        // Играющий трек без наведения — точка `PlayingAnimation`, под курсором — кнопка.
+        property <float> veil: current ? 1 : root.heat;
+        property <bool> dot: current && App.playing && !hot;
+        if self.veil > 0.01: Rectangle {
+            background: #000000.with-alpha(0.4 * parent.veil);
+            if !parent.dot: Icon {
+                source: current && App.playing ? Icons.pause-filled-xs : Icons.play-filled-xs;
+                size: 24px;
+                colorize: #e6e6e6.with-alpha(0.9 * (current ? 1 : root.heat));
+            }
+            if parent.dot: PlayingDot { }
         }
     }
     HorizontalLayout {
@@ -99,10 +129,22 @@ export component TrackRow inherits Rectangle {
         y: 8px;
         width: 40px;
         height: 40px;
-        Icon {
+        if !hot: Icon {
             source: item.liked ? Icons.liked-small : Icons.like-small;
             size: 20px;
-            colorize: like-ta.has-hover ? Theme.controls-color-primary-text-enabled-variant : Theme.controls-color-primary-text-enabled;
+            colorize: Theme.controls-color-primary-text-enabled;
+        }
+        // Под курсором значок откликается на лайк, как `LikeButton` оригинала.
+        if hot: Rectangle {
+            pop := LikePop { width: 0; height: 0; liked: item.liked; }
+            Icon {
+                x: (parent.width - self.width) / 2 + pop.shift;
+                source: item.liked ? Icons.liked-small : Icons.like-small;
+                size: 20px;
+                transform-scale: pop.scale;
+                colorize: like-ta.has-hover ? Theme.controls-color-primary-text-enabled-variant : Theme.controls-color-primary-text-enabled;
+                animate colorize { duration: Motion.t; easing: ease; }
+            }
         }
         like-ta := TouchArea {
             mouse-cursor: MouseCursor.pointer;
@@ -115,9 +157,10 @@ export component TrackRow inherits Rectangle {
         width: 40px;
         height: 40px;
         Icon {
-            visible: root.removable && hot;
+            visible: root.removable && root.heat > 0.01;
             source: Icons.bucket-small;
             size: 20px;
+            opacity: root.heat;
             colorize: bucket-ta.has-hover ? Theme.controls-color-primary-text-enabled-variant : Theme.controls-color-primary-text-enabled;
         }
         bucket-ta := TouchArea {
@@ -134,9 +177,10 @@ export component TrackRow inherits Rectangle {
         width: 40px;
         height: 40px;
         Icon {
-            visible: hot;
+            visible: root.heat > 0.01;
             source: Icons.more-small;
             size: 20px;
+            opacity: root.heat;
             colorize: more-ta.has-hover ? Theme.controls-color-primary-text-enabled-variant : Theme.controls-color-primary-text-enabled;
         }
         more-ta := TouchArea {
@@ -144,13 +188,15 @@ export component TrackRow inherits Rectangle {
             clicked => { App.row-menu(root.block, root.index, self.absolute-position.x + 20px, self.absolute-position.y + 40px); }
         }
     }
-    if !hot: Text {
+    // Длительность уступает место кнопке «…»: `CommonControlsBar_duration { transition: opacity .3s }`.
+    if root.heat < 0.99: Text {
         x: parent.width - 18px - self.width;
         y: 20px;
         text: item.duration;
         font-size: Theme.font-size-label-m;
         font-weight: 500;
         color: Theme.controls-color-primary-text-enabled;
+        opacity: 1 - root.heat;
     }
 }
 
@@ -189,7 +235,7 @@ export component Tab inherits Rectangle {
     width: label.preferred-width + 32px;
     border-radius: self.height / 2;
     background: selected ? Theme.controls-color-secondary-default-enabled : ta.has-hover ? Theme.controls-color-secondary-default-disabled : transparent;
-    animate background { duration: App.motion ? 150ms : 0ms; }
+    animate background { duration: App.motion ? Theme.duration-transition : 0ms; easing: ease; }
     label := Text {
         text: root.text;
         font-size: Theme.font-size-label-m;

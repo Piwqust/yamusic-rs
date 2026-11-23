@@ -95,7 +95,7 @@ export component LPill inherits Rectangle {
     width: pad + covers-w + max(t1.preferred-width, t2.preferred-width) + 16px;
     border-radius: h / 2;
     background: selected ? Theme.controls-color-secondary-default-enabled : ta.has-hover ? Theme.controls-color-secondary-default-disabled : transparent;
-    animate background { duration: App.motion ? 150ms : 0ms; }
+    animate background { duration: App.motion ? Theme.duration-transition : 0ms; easing: ease; }
     if cover.width > 0: Cover { x: pad; y: (root.h - root.cs) / 2; width: root.cs; height: root.cs; round: true; source: root.cover; }
     if cover2.width > 0: Cover { x: pad + 26px; y: (root.h - root.cs) / 2; width: root.cs; height: root.cs; round: true; source: root.cover2; }
     t1 := Text {
@@ -263,7 +263,7 @@ component LikesHistory inherits Rectangle {
         height: 82px;
         border-radius: 12px;
         background: ta.has-hover ? Theme.controls-color-secondary-default-hovered : Theme.controls-color-secondary-default-enabled;
-        animate background { duration: App.motion ? 150ms : 0ms; }
+        animate background { duration: App.motion ? Theme.duration-transition : 0ms; easing: ease; }
         if c.cover.width > 0: Cover { x: 12px; y: 12px; width: 58px; height: 58px; radius: Theme.radius-size-s; source: c.cover; }
         if c.cover.width == 0: Rectangle {
             x: 12px;

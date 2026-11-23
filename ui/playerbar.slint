@@ -1,7 +1,7 @@
 // Нижний плеер.
 
 import { Theme } from "theme.slint";
-import { Icons, Icon, Cover, ArtistLinks, ExplicitMark } from "widgets.slint";
+import { Icons, Icon, Cover, ArtistLinks, ExplicitMark, Motion, LikePop } from "widgets.slint";
 import { App } from "state.slint";
 import { VolumePopup } from "popups.slint";
 
@@ -14,15 +14,23 @@ component BarButton inherits Rectangle {
     in property <brush> ink-hover: #ffffffe6;
     in property <brush> ink-off: #ffffff14;
     out property <bool> hovered: ta.has-hover;
+    // Отклик значка на лайк: масштаб и сдвиг задаёт владелец.
+    in property <float> icon-scale: 1;
+    in property <length> icon-shift: 0px;
     callback clicked;
     width: 32px;
     height: 32px;
     border-radius: self.width / 2;
+    // `BaseSonataControlsDesktop_sonataButton:hover { transform: scale(1.05) }`, переход 0,3 с.
+    property <float> grow: ta.has-hover && enabled ? 1.05 : 1;
+    animate grow { duration: Motion.t; easing: ease; }
     Icon {
+        x: (parent.width - self.width) / 2 + root.icon-shift;
         source: icon;
         size: icon-size;
+        transform-scale: root.grow * root.icon-scale;
         colorize: !enabled ? ink-off : active ? Theme.controls-color-primary-default-enabled : ta.has-hover ? ink-hover : ink;
-        animate colorize { duration: App.motion ? Theme.duration-transition : 0ms; }
+        animate colorize { duration: App.motion ? Theme.duration-transition : 0ms; easing: ease; }
     }
     ta := TouchArea {
         enabled: root.enabled;
@@ -45,6 +53,9 @@ export component PlayerBar inherits Rectangle {
     // Полоса и бегунок видны при наведении на плеер или на зону перемотки.
     property <bool> show-progress: on && (bar-ta.has-hover || seek-ta.has-hover || dragging);
     property <float> hover-progress: max(0, min(1, seek-ta.mouse-x / root.width));
+    // Видимость полосы и бегунка: `opacity` с переходом 0,3 с.
+    property <float> reveal: show-progress ? 1 : 0;
+    animate reveal { duration: Motion.t; easing: ease; }
 
     inner := Rectangle {
         border-radius: Theme.radius-size-l;
@@ -52,23 +63,28 @@ export component PlayerBar inherits Rectangle {
         border-color: #ffffff0a;
         background: on ? App.tint : Theme.background-color-primary-enabled-player;
         clip: true;
-        animate background { duration: App.motion ? Theme.duration-transition : 0ms; }
+        animate background { duration: App.motion ? Theme.duration-transition : 0ms; easing: ease; }
 
         if on: Rectangle {
             x: 0;
             width: parent.width * shown;
             height: parent.height;
             background: #ffffff0d;
+            // `ChangeTimecodeBackground`: `transform .3s linear`, при перетаскивании — сразу.
+            animate width { duration: dragging ? 0ms : Motion.t; easing: linear; }
         }
-        // Полоса прогресса сверху: видна при наведении на плеер.
-        if show-progress: Rectangle {
+        // Полоса прогресса сверху: проявляется за 0,3 с при наведении на плеер.
+        Rectangle {
             y: 0;
             height: 4px;
-            background: #ffffff1f;
+            visible: root.reveal > 0.01;
+            background: #ffffff.with-alpha(0.12 * root.reveal);
             Rectangle {
                 x: 0;
                 width: parent.width * shown;
                 background: Theme.controls-color-primary-default-enabled;
+                opacity: root.reveal;
+                animate width { duration: dragging ? 0ms : Motion.t; easing: linear; }
             }
         }
 
@@ -88,8 +104,10 @@ export component PlayerBar inherits Rectangle {
                 radius: Theme.radius-size-s;
                 background: #ffffff14;
                 source: App.cover;
-                if cover-ta.has-hover: Rectangle {
+                Rectangle {
                     background: #00000033;
+                    opacity: cover-ta.has-hover ? 1 : 0;
+                    animate opacity { duration: Motion.t; easing: ease; }
                     Rectangle {
                         width: 44px;
                         height: 44px;
@@ -182,12 +200,24 @@ export component PlayerBar inherits Rectangle {
                     source: App.playing ? Icons.pause-filled : Icons.play-filled;
                     size: 40px;
                     colorize: play-ta.has-hover ? Theme.controls-color-primary-default-hovered : Theme.controls-color-primary-default-enabled;
+                    animate colorize { duration: Motion.t; easing: ease; }
+                    transform-scale: play-ta.has-hover ? 1.05 : 1;
+                    animate transform-scale { duration: Motion.t; easing: ease; }
                 }
                 play-ta := TouchArea { mouse-cursor: MouseCursor.pointer; clicked => { App.play-pause(); } }
             }
             BarButton { x: c + 12px + 6px; y: 24px; icon: Icons.next-small; icon-size: 20px; enabled: on; clicked => { App.next(); } }
             BarButton { x: c + 72px; y: 24px; icon: App.repeat == 2 ? Icons.repeat-one : Icons.repeat; enabled: on && !App.is-wave; active: App.repeat > 0; clicked => { App.cycle-repeat(); } }
-            BarButton { x: c + 120px + 6px; y: 24px; icon: App.liked ? Icons.liked : Icons.like; enabled: on; clicked => { App.like(); } }
+            BarButton {
+                x: c + 120px + 6px;
+                y: 24px;
+                icon: App.liked ? Icons.liked : Icons.like;
+                enabled: on;
+                icon-scale: bar-like.scale;
+                icon-shift: bar-like.shift;
+                clicked => { App.like(); }
+                bar-like := LikePop { width: 0; height: 0; liked: App.liked; }
+            }
 
             BarButton { x: parent.width - 193px; y: 24px; icon: Icons.lyrics; enabled: on && App.has-lyrics; clicked => { App.open-fullscreen(2); } }
             BarButton { x: parent.width - 145px; y: 24px; icon: Icons.queue; enabled: on; clicked => { App.open-fullscreen(1); } }
@@ -227,8 +257,13 @@ export component PlayerBar inherits Rectangle {
         }
     }
 
-    if show-progress: Rectangle {
-        x: root.width * shown - self.width / 2;
+    // Бегунок: `opacity .3s ease, transform .3s linear`.
+    Rectangle {
+        property <length> at: root.width * shown;
+        animate at { duration: dragging ? 0ms : Motion.t; easing: linear; }
+        visible: root.reveal > 0.01;
+        opacity: root.reveal;
+        x: self.at - self.width / 2;
         y: 2px - self.height / 2;
         width: dragging || seek-ta.has-hover ? 14px : 12px;
         height: self.width;
@@ -237,26 +272,34 @@ export component PlayerBar inherits Rectangle {
         drop-shadow-blur: 4px;
         drop-shadow-color: #00000052;
     }
-    if on && (seek-ta.has-hover || dragging): Rectangle {
+    // Время под курсором: `ChangeTimecode_timecode { transition: opacity .3s }`.
+    Rectangle {
+        property <bool> shown-now: on && (seek-ta.has-hover || dragging);
+        property <float> a: self.shown-now ? 1 : 0;
+        animate a { duration: Motion.t; easing: ease; }
         property <float> at: dragging ? shown : hover-progress;
+        visible: self.a > 0.01;
         x: max(0px, min(root.width - self.width, root.width * at - self.width / 2));
         y: -32px;
         width: time.preferred-width + 16px;
         height: 24px;
         border-radius: 12px;
-        background: #000000b3;
+        background: #000000.with-alpha(0.7 * self.a);
         time := Text {
             text: App.format-time(at * App.duration) + " / " + App.format-time(App.duration);
             font-size: Theme.font-size-label-xs;
             font-weight: 500;
-            color: #ffffffe6;
+            color: #ffffff.with-alpha(0.9 * parent.a);
         }
     }
 
     vol-pop := VolumePopup {
         x: root.width - 49px + 16px - self.width / 2;
         y: 24px - self.height;
-        visible: vol-open;
+        // `ChangeVolume_sliderContainer { transition: opacity .3s ease .2s }`.
+        opacity: vol-open ? 1 : 0;
+        animate opacity { delay: App.motion ? 200ms : 0ms; duration: Motion.t; easing: ease; }
+        visible: self.opacity > 0.01;
     }
 }
 
@@ -265,7 +308,7 @@ export component PlayerBar inherits Rectangle {
 export component MiniPlayer inherits Rectangle {
     property <bool> on: App.has-track;
     background: on ? App.tint : Theme.background-color-primary-enabled-player;
-    animate background { duration: App.motion ? Theme.duration-transition : 0ms; }
+    animate background { duration: App.motion ? Theme.duration-transition : 0ms; easing: ease; }
 
     ta := TouchArea {
         pointer-event(e) => {

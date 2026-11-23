@@ -17,7 +17,7 @@ component PillAction inherits Rectangle {
     background: primary
         ? (ta.has-hover ? Theme.controls-color-primary-default-hovered : Theme.controls-color-primary-default-enabled)
         : (ta.has-hover ? Theme.controls-color-secondary-default-hovered : Theme.controls-color-secondary-default-enabled);
-    animate background { duration: App.motion ? Theme.duration-transition : 0ms; }
+    animate background { duration: App.motion ? Theme.duration-transition : 0ms; easing: ease; }
     property <brush> ink: primary ? Theme.controls-color-primary-on-default-enabled : Theme.controls-color-secondary-on-default-enabled;
     HorizontalLayout {
         alignment: center;

@@ -105,6 +105,14 @@ impl Default for Config {
     }
 }
 
+/// Запуск для проверки рядом с рабочим экземпляром (`YAMUSIC_RS_SANDBOX=1`): окно за экраном
+/// и без фокуса, без значка в трее, автозапуска и поиска уже открытого окна. Папку настроек
+/// такому запуску задают через APPDATA (XDG_CONFIG_HOME), чтобы он не трогал настоящую.
+pub fn sandbox() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("YAMUSIC_RS_SANDBOX").is_some())
+}
+
 /// %APPDATA%\yamusic-rs или ~/.config/yamusic-rs. Папка прежнего названия (yamusic-lite, ещё раньше yawave) переносится
 /// молча, вместе с токеном и настройками. Если её держит запущенная старая версия, этот запуск
 /// работает со старой папкой, а перенос повторится в следующий раз.

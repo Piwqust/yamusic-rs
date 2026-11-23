@@ -61,7 +61,7 @@ export component GridPage inherits Rectangle {
                 y: 0;
                 border-radius: 6px;
                 background: create-ta.has-hover ? Theme.controls-color-secondary-default-hovered : Theme.controls-color-secondary-default-disabled;
-                animate background { duration: App.motion ? 150ms : 0ms; }
+                animate background { duration: App.motion ? Theme.duration-transition : 0ms; easing: ease; }
                 Icon { source: Icons.add-large; size: 38px; colorize: Theme.controls-color-primary-text-enabled; }
             }
             Text {

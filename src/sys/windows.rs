@@ -28,6 +28,19 @@ fn handle(w: &slint::Window) -> isize {
     .unwrap_or(0)
 }
 
+/// Проверочный запуск (`config::sandbox`): окно создано за экраном, а здесь становится
+/// невидимым и прозрачным для мыши и возвращается на экран. Рисуется оно как обычно,
+/// так что его можно снять через PrintWindow, не показывая и не отнимая фокус.
+pub fn ghost(w: &slint::Window) {
+    let hwnd = h(handle(w));
+    unsafe {
+        let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+        SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex | (WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW) as isize);
+        SetLayeredWindowAttributes(hwnd, 0, 0, LWA_ALPHA);
+        SetWindowPos(hwnd, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
+    }
+}
+
 /// Окно уже создано: winit делает это не сразу после `show()`.
 pub fn created(w: &slint::Window) -> bool {
     handle(w) != 0

@@ -38,7 +38,7 @@ export component VolumePopup inherits Rectangle {
         height: rail-h * v;
         border-radius: rail-w / 2;
         background: glass ? #ffffffcc : ta.has-hover || ta.pressed ? Theme.controls-color-primary-default-enabled : #ffffffcc;
-        animate background { duration: App.motion ? 150ms : 0ms; }
+        animate background { duration: App.motion ? Theme.duration-transition : 0ms; easing: ease; }
     }
     if !glass: Rectangle {
         x: (parent.width - 12px) / 2;
@@ -47,7 +47,7 @@ export component VolumePopup inherits Rectangle {
         height: 12px;
         border-radius: 6px;
         background: ta.has-hover || ta.pressed ? Theme.controls-color-primary-default-enabled : #ffffff;
-        animate background { duration: App.motion ? 150ms : 0ms; }
+        animate background { duration: App.motion ? Theme.duration-transition : 0ms; easing: ease; }
     }
     ta := TouchArea {
         mouse-cursor: MouseCursor.pointer;
@@ -82,7 +82,7 @@ export component MenuRow inherits Rectangle {
     height: 36px;
     border-radius: Theme.radius-size-m;
     background: ta.has-hover || active ? (themed ? Theme.surface-color-primary-enabled-list : #ffffff14) : transparent;
-    animate background { duration: App.motion ? 150ms : 0ms; }
+    animate background { duration: App.motion ? Theme.duration-transition : 0ms; easing: ease; }
     if has-icon: Icon {
         x: 12px;
         source: icon;
@@ -97,7 +97,7 @@ export component MenuRow inherits Rectangle {
         font-size: Theme.font-size-label-m;
         font-weight: 500;
         color: ta.has-hover || active ? ink-on : ink;
-        animate color { duration: App.motion ? 150ms : 0ms; }
+        animate color { duration: App.motion ? Theme.duration-transition : 0ms; easing: ease; }
     }
     if submenu: Icon {
         x: parent.width - 32px;
@@ -286,7 +286,7 @@ component QualityItem inherits Rectangle {
     in property <bool> selected;
     callback clicked;
     background: ta.has-hover ? Theme.surface-color-primary-enabled-list : transparent;
-    animate background { duration: App.motion ? 150ms : 0ms; }
+    animate background { duration: App.motion ? Theme.duration-transition : 0ms; easing: ease; }
     Text {
         x: 25px;
         y: 12px;
@@ -348,7 +348,7 @@ export component SoundSettings inherits Rectangle {
         height: 32px;
         border-radius: 16px;
         background: close-ta.has-hover ? Theme.controls-color-secondary-default-hovered : Theme.controls-color-secondary-default-enabled;
-        animate background { duration: App.motion ? 150ms : 0ms; }
+        animate background { duration: App.motion ? Theme.duration-transition : 0ms; easing: ease; }
         Icon { source: Icons.close-small; size: 20px; colorize: Theme.controls-color-primary-text-enabled-variant; }
         close-ta := TouchArea {
             mouse-cursor: MouseCursor.pointer;
@@ -402,10 +402,10 @@ export component SoundSettings inherits Rectangle {
         height: 20px;
         border-radius: 10px;
         background: App.eq-on ? Theme.controls-color-primary-default-enabled : Theme.controls-color-primary-default-disabled;
-        animate background { duration: App.motion ? Theme.duration-transition : 0ms; }
+        animate background { duration: App.motion ? Theme.duration-transition : 0ms; easing: ease; }
         Rectangle {
             x: App.eq-on ? 14px : 2px;
-            animate x { duration: App.motion ? Theme.duration-transition : 0ms; }
+            animate x { duration: App.motion ? Theme.duration-transition : 0ms; easing: ease; }
             width: 16px;
             height: 16px;
             border-radius: 8px;
@@ -470,7 +470,7 @@ export component SoundSettings inherits Rectangle {
             border-radius: 24px;
             border-width: 1px;
             border-color: App.eq-on ? (dd-ta.has-hover ? Theme.controls-color-secondary-outline-hovered-stroke : Theme.controls-color-secondary-outline-enabled-stroke) : Theme.controls-color-secondary-outline-disabled-stroke;
-            animate border-color { duration: App.motion ? 150ms : 0ms; }
+            animate border-color { duration: App.motion ? Theme.duration-transition : 0ms; easing: ease; }
             Text {
                 x: 20px;
                 text: App.eq-presets[App.eq-preset];

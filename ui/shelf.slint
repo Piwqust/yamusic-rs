@@ -1,7 +1,7 @@
 // Карточки и горизонтальные полки с прокруткой стрелками.
 
 import { Theme } from "theme.slint";
-import { Icons, Icon, Cover, Pic, ExplicitMark } from "widgets.slint";
+import { Icons, Icon, Cover, Pic, ExplicitMark, Motion } from "widgets.slint";
 import { App, CardItem } from "state.slint";
 import { BlockHeader } from "rows.slint";
 
@@ -55,16 +55,26 @@ export component CardTile inherits Rectangle {
         round: item.round;
         radius: Theme.radius-size-l;
         source: item.cover;
-        if ta.has-hover: Rectangle {
-            background: #00000033;
+        // Карточка оригинала: обложка затемняется за 0,3 с, кнопки выезжают снизу на 12 px
+        // и проявляются с задержкой 0,1 с; кнопка под курсором растёт до 1,05.
+        veil := Rectangle {
+            property <float> k: ta.has-hover ? 1 : 0;
+            animate k { duration: Motion.t; easing: ease; }
+            property <float> c: ta.has-hover ? 1 : 0;
+            animate c { delay: App.motion ? 100ms : 0ms; duration: Motion.t; easing: ease; }
+            visible: self.k > 0.01 || self.c > 0.01;
+            background: #000000.with-alpha(0.2 * self.k);
             Rectangle {
                 x: item.round ? (parent.width - 48px) / 2 : 12px;
-                y: parent.height - 48px - 12px;
+                y: parent.height - 48px - 12px + (1 - veil.c) * 12px;
                 width: 48px;
                 height: 48px;
                 border-radius: 24px;
+                opacity: veil.c;
                 background: play-ta.has-hover ? #ffffff3d : #ffffff29;
-                animate background { duration: App.motion ? 150ms : 0ms; }
+                animate background { duration: App.motion ? Theme.duration-transition : 0ms; easing: ease; }
+                transform-scale: play-ta.has-hover ? 1.05 : 1;
+                animate transform-scale { duration: Motion.t; easing: ease; }
                 Icon { source: Icons.play-filled; size: 48px; colorize: #e6e6e6; }
                 play-ta := TouchArea { mouse-cursor: MouseCursor.pointer; clicked => { root.clicked(); } }
             }
@@ -188,7 +198,8 @@ export component Shelf inherits Rectangle {
         y: 44px;
         height: card-h;
         property <length> shift: -root.first * (root.size + root.gap);
-        animate shift { duration: App.motion ? 300ms : 0ms; easing: ease-out; }
+        // Карусель оригинала — Swiper: 0,3 с, `transition-timing-function: ease`.
+        animate shift { duration: App.motion ? 300ms : 0ms; easing: ease; }
         for c[i] in root.items: CardTile {
             x: row.shift + i * (root.size + root.gap);
             y: 0;

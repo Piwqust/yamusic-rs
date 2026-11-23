@@ -32,14 +32,25 @@ mod tags;
 #[cfg(windows)]
 mod tray;
 mod update;
+mod vibe;
 mod yandex_id;
+
+/// Окно проверочного запуска: за краем экрана, без фокуса и без кнопки на панели задач.
+fn offscreen(attrs: slint::winit_030::winit::window::WindowAttributes) -> slint::winit_030::winit::window::WindowAttributes {
+    use slint::winit_030::winit;
+    let attrs = attrs.with_active(false).with_position(winit::dpi::PhysicalPosition::new(-20000, -20000));
+    #[cfg(windows)]
+    let attrs = winit::platform::windows::WindowAttributesExtWindows::with_skip_taskbar(attrs, true);
+    attrs
+}
 
 fn main() -> Result<(), slint::PlatformError> {
     #[cfg(target_os = "linux")]
     sys::audio_identity();
     // После обновления старая версия ещё закрывается: ждём её до 15 секунд.
     let after_update = std::env::args().any(|a| a == update::AFTER_UPDATE);
-    let mut claimed = sys::claim_instance();
+    let sandbox = config::sandbox();
+    let mut claimed = sandbox || sys::claim_instance();
     for _ in 0..60 {
         if claimed || !after_update {
             break;
@@ -55,12 +66,18 @@ fn main() -> Result<(), slint::PlatformError> {
     // Skia без видеокарты: память не зависит от драйвера (с OpenGL или D3D окно занимает
     // в 2–3 раза больше). Режим работы («Плавный» или «Лёгкий») меняет только анимации
     // и кэши и переключается на лету (gui::apply_mode).
-    slint::BackendSelector::new().backend_name("winit".into()).renderer_name("skia-software".into()).select()?;
+    let mut backend = slint::BackendSelector::new().backend_name("winit".into()).renderer_name("skia-software".into());
+    if sandbox {
+        backend = backend.with_winit_window_attributes_hook(offscreen);
+    }
+    backend.select()?;
     // По app_id (Wayland) и WM_CLASS (X11) окружение находит .desktop и значок.
     #[cfg(target_os = "linux")]
     slint::set_xdg_app_id("yamusic-rs")?;
     update::cleanup();
-    sys::refresh_autostart();
+    if !sandbox {
+        sys::refresh_autostart();
+    }
     // Без трея на Linux спрятанное окно было бы не вернуть.
     let start_hidden = cfg!(windows) && std::env::args().any(|a| a == "--tray");
     gui::run(start_hidden)

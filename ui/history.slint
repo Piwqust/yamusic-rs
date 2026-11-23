@@ -17,7 +17,7 @@ component DayTab inherits Rectangle {
     border-width: 1.6px;
     border-color: selected ? Theme.controls-color-primary-outline-selected-stroke : transparent;
     background: ta.has-hover ? Theme.controls-color-secondary-default-hovered : Theme.controls-color-secondary-default-enabled;
-    animate background { duration: App.motion ? 150ms : 0ms; }
+    animate background { duration: App.motion ? Theme.duration-transition : 0ms; easing: ease; }
     t := Text {
         text: root.text;
         font-size: Theme.font-size-label-m;

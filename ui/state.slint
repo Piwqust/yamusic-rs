@@ -264,6 +264,16 @@ export global App {
 
     // Моя волна: пятно, фон из палитры трека.
     in property <image> blob;
+    // Живая анимация пятна: кадр шейдера и признак, что рисуется она, а не картинка.
+    in property <image> vibe-frame;
+    // Какую часть холста занимает кадр: левый верхний угол и размер в долях стороны.
+    in property <float> vibe-x;
+    in property <float> vibe-y;
+    in property <float> vibe-w;
+    in property <float> vibe-h;
+    in property <bool> vibe-anim;
+    callback vibe-mount();
+    callback vibe-crop(float, float, float, float);
     in property <[color]> vibe-stops: [#000, #000, #000, #000, #000, #000, #000, #000, #000, #000, #000, #000, #000, #000, #000, #000];
     in property <color> vibe-edge: #000;
 

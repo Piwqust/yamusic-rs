@@ -15,7 +15,7 @@ component RoundButton inherits Rectangle {
     height: size;
     border-radius: size / 2;
     background: ta.has-hover && enabled ? #33333399 : #1a1a1a99;
-    animate background { duration: App.motion ? 150ms : 0ms; }
+    animate background { duration: App.motion ? Theme.duration-transition : 0ms; easing: ease; }
     Icon { source: icon; size: icon-size; colorize: enabled ? (ta.has-hover ? #ffffff : ink) : #ffffff33; }
     ta := TouchArea {
         enabled: root.enabled;
@@ -31,7 +31,7 @@ component QueueRow inherits Rectangle {
     height: 56px;
     border-radius: Theme.radius-size-m;
     background: ta.has-hover ? #ffffff0d : transparent;
-    animate background { duration: App.motion ? 150ms : 0ms; }
+    animate background { duration: App.motion ? Theme.duration-transition : 0ms; easing: ease; }
     ta := TouchArea { mouse-cursor: MouseCursor.pointer; clicked => { root.clicked(); } }
     Cover {
         x: 8px;
@@ -144,7 +144,7 @@ component Poster inherits Rectangle {
                 height: 67px;
                 border-radius: 34px;
                 background: play-ta.has-hover ? Theme.controls-color-primary-default-hovered : #ffff00;
-                animate background { duration: App.motion ? 150ms : 0ms; }
+                animate background { duration: App.motion ? Theme.duration-transition : 0ms; easing: ease; }
                 Icon { source: App.playing ? Icons.pause-m : Icons.play-m; size: 34px; colorize: #1a1a1ae6; }
                 play-ta := TouchArea { mouse-cursor: MouseCursor.pointer; clicked => { App.play-pause(); } }
             }
@@ -224,7 +224,7 @@ component Poster inherits Rectangle {
             width: parent.width * shown;
             border-radius: 2px;
             background: seek.has-hover || seek.pressed ? Theme.controls-color-primary-default-enabled : #ffffffcc;
-            animate background { duration: App.motion ? 150ms : 0ms; }
+            animate background { duration: App.motion ? Theme.duration-transition : 0ms; easing: ease; }
         }
     }
     if seek.has-hover || seek.pressed: Text {
@@ -300,11 +300,11 @@ component LyricRow inherits Rectangle {
     // Прозрачность через цвет текста: opacity на элементе с детьми рисуется отдельным
     // слоем во всю область отрисовки, и в программном Skia каждая строка стоит кадр.
     property <float> alpha: shade;
-    animate alpha { duration: App.motion ? 450ms : 0ms; }
+    animate alpha { duration: App.motion ? 450ms : 0ms; easing: ease; }
     // Масштаб идёт ступенями по 2,5%: у каждого промежуточного размера свои глифы,
     // и плавная анимация растеризовала бы строку заново в каждом кадре и раздувала кэш.
     property <float> grow: active ? 1 : 0;
-    animate grow { duration: App.motion ? 450ms : 0ms; }
+    animate grow { duration: App.motion ? 450ms : 0ms; easing: ease; }
     label := Text {
         transform-scale: 1 + round(root.grow * 8) * 0.025;
         x: parent.width * 0.1;
@@ -555,7 +555,7 @@ export component FullscreenPlayer inherits Rectangle {
         height: 48px;
         border-radius: 24px;
         background: close-ta.has-hover ? #ffffff29 : #ffffff14;
-        animate background { duration: App.motion ? 150ms : 0ms; }
+        animate background { duration: App.motion ? Theme.duration-transition : 0ms; easing: ease; }
         Icon { source: Icons.arrow-down; size: 24px; colorize: #ffffff; }
         close-ta := TouchArea {
             mouse-cursor: MouseCursor.pointer;

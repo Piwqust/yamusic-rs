@@ -5,6 +5,7 @@ use crate::ahead::Ahead;
 use crate::api::{Account, Api, Batch, Res, Track, WaveSession, WAVE};
 use crate::config::log;
 use crate::eq::{Eq, EqParams};
+use crate::vibe::{Tap, Tapped};
 use crate::stream::{Buf, Reader};
 use rodio::{Decoder, OutputStream, Sink, Source as _};
 use std::collections::{HashSet, VecDeque};
@@ -138,6 +139,8 @@ pub struct Player {
     shared: Arc<Mutex<Shared>>,
     likes: Likes,
     pub eq: Arc<EqParams>,
+    /// Отвод звука для анимации «Моей волны».
+    pub tap: Arc<Tap>,
 }
 
 impl Player {
@@ -146,10 +149,11 @@ impl Player {
         let shared = Arc::new(Mutex::new(Shared { volume: 0.6, ..Default::default() }));
         let likes: Likes = Default::default();
         let eq: Arc<EqParams> = Default::default();
-        let p = Player { tx: tx.clone(), shared: shared.clone(), likes: likes.clone(), eq: eq.clone() };
+        let tap: Arc<Tap> = Default::default();
+        let p = Player { tx: tx.clone(), shared: shared.clone(), likes: likes.clone(), eq: eq.clone(), tap: tap.clone() };
         thread::Builder::new()
             .name("audio".into())
-            .spawn(move || Engine::new(tx, shared, likes, notify, eq).run(rx))
+            .spawn(move || Engine::new(tx, shared, likes, notify, eq, tap).run(rx))
             .expect("audio thread");
         p
     }
@@ -356,6 +360,7 @@ struct Engine {
     likes: Likes,
     notify: Notify,
     eq: Arc<EqParams>,
+    tap: Arc<Tap>,
     audio: Option<(OutputStream, Sink)>,
     /// Выход Windows по умолчанию, на котором открыт звук, и когда его последний раз сверяли.
     #[cfg(windows)]
@@ -407,7 +412,7 @@ struct Engine {
 }
 
 impl Engine {
-    fn new(tx: Sender<Msg>, shared: Arc<Mutex<Shared>>, likes: Likes, notify: Notify, eq: Arc<EqParams>) -> Self {
+    fn new(tx: Sender<Msg>, shared: Arc<Mutex<Shared>>, likes: Likes, notify: Notify, eq: Arc<EqParams>, tap: Arc<Tap>) -> Self {
         // Фидбек и лайки — по порядку в отдельном потоке, чтобы не блокировать плеер.
         let (bg, bg_rx) = mpsc::channel::<Job>();
         thread::Builder::new()
@@ -425,6 +430,7 @@ impl Engine {
             likes,
             notify,
             eq,
+            tap,
             audio: None,
             #[cfg(windows)]
             out_name: None,
@@ -512,11 +518,14 @@ impl Engine {
 
     fn gain(&self) -> f32 {
         let v = self.volume;
-        match self.loudness {
+        let gain = match self.loudness {
             Loudness::Square => v * v,
             Loudness::Decibels if v <= 0.0 => 0.0,
             Loudness::Decibels => 10f32.powf((v - 1.0) * 50.0 / 20.0),
-        }
+        };
+        // Анимация слышит звук уже с громкостью, как анализатор оригинала.
+        self.tap.set_gain(gain);
+        gain
     }
 
     fn pos(&self) -> f32 {
@@ -593,7 +602,7 @@ impl Engine {
             return false;
         }
         let Ok(src) = Decoder::new(buf.reader()) else { return false };
-        let src = Ahead::new(Eq::new(src.convert_samples::<f32>(), self.eq.clone()));
+        let src = Tapped::new(Ahead::new(Eq::new(src.convert_samples::<f32>(), self.eq.clone())), self.tap.clone());
         let (vol, paused) = (self.gain(), self.paused);
         let Some(sink) = self.sink() else { return false };
         sink.pause();
@@ -911,7 +920,7 @@ impl Engine {
     fn replay(&mut self) -> bool {
         let Some(buf) = self.current_buf.clone() else { return false };
         let Ok(src) = Decoder::new(buf.reader()) else { return false };
-        let src = Ahead::new(Eq::new(src.convert_samples::<f32>(), self.eq.clone()));
+        let src = Tapped::new(Ahead::new(Eq::new(src.convert_samples::<f32>(), self.eq.clone())), self.tap.clone());
         if let Some(sink) = self.sink() {
             sink.append(src);
             sink.play();
@@ -1550,7 +1559,7 @@ impl Engine {
             self.sh().loading = false;
             return;
         }
-        let src = Ahead::new(Eq::new(src.convert_samples::<f32>(), self.eq.clone()));
+        let src = Tapped::new(Ahead::new(Eq::new(src.convert_samples::<f32>(), self.eq.clone())), self.tap.clone());
         let vol = self.gain();
         let paused = self.paused;
         if let Some(sink) = self.sink() {
@@ -1660,7 +1669,7 @@ mod tests {
 #[cfg(test)]
 #[test]
 fn explicit_filter_survives_repeat_and_previous() {
-    let mut engine = Engine::new(mpsc::channel().0, Default::default(), Default::default(), Arc::new(|| {}), Default::default());
+    let mut engine = Engine::new(mpsc::channel().0, Default::default(), Default::default(), Arc::new(|| {}), Default::default(), Default::default());
     let blocked = crate::api::parse_track(&serde_json::json!({"id":1,"title":"E","explicit":true})).unwrap();
     let allowed = crate::api::parse_track(&serde_json::json!({"id":2,"title":"A"})).unwrap();
     let previous = crate::api::ALLOW_EXPLICIT.swap(false, std::sync::atomic::Ordering::Relaxed);

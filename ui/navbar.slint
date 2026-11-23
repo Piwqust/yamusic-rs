@@ -13,20 +13,25 @@ component NavLink inherits Rectangle {
     height: 48px;
     border-radius: Theme.radius-size-l;
     background: ta.has-hover && !selected ? Theme.controls-color-secondary-default-enabled : transparent;
-    animate background { duration: App.motion ? Theme.duration-transition : 0ms; }
+    animate background { duration: App.motion ? Theme.duration-transition : 0ms; easing: ease; }
     Icon {
         x: 16px;
         source: selected ? icon-selected : icon;
         size: 24px;
         colorize: selected || ta.has-hover ? Theme.controls-color-primary-text-enabled-variant : Theme.controls-color-primary-text-enabled;
+        animate colorize { duration: App.motion ? Theme.duration-transition : 0ms; easing: ease; }
     }
-    if !App.nav-collapsed: Text {
+    // Подпись проявляется за 0,3 с и гаснет за 0,15 с (`NavbarDesktop_animation_show/hide`).
+    Text {
         x: 52px;
         text: root.text;
+        opacity: App.nav-collapsed ? 0 : 1;
+        animate opacity { duration: !App.motion ? 0ms : App.nav-collapsed ? 150ms : 300ms; easing: ease; }
+        visible: self.opacity > 0.01;
         font-size: Theme.font-size-label-m;
         font-weight: 500;
         color: selected || ta.has-hover ? Theme.controls-color-primary-text-enabled-variant : Theme.controls-color-primary-text-enabled;
-        animate color { duration: App.motion ? Theme.duration-transition : 0ms; }
+        animate color { duration: App.motion ? Theme.duration-transition : 0ms; easing: ease; }
     }
     ta := TouchArea {
         mouse-cursor: MouseCursor.pointer;
@@ -58,7 +63,7 @@ export component Navbar inherits TouchArea {
         border-radius: Theme.radius-size-s;
         background: Theme.controls-color-secondary-default-enabled;
         opacity: root.has-hover ? 1 : 0;
-        animate opacity { duration: App.motion ? Theme.duration-transition : 0ms; }
+        animate opacity { duration: App.motion ? Theme.duration-transition : 0ms; easing: ease; }
         Icon {
             source: c ? Icons.arrow-right-small : Icons.arrow-left-small;
             size: 20px;
@@ -97,7 +102,7 @@ export component Navbar inherits TouchArea {
             height: 56px;
             border-radius: Theme.radius-size-l;
             background: pin-ta.has-hover ? Theme.controls-color-secondary-default-enabled : transparent;
-            animate background { duration: App.motion ? 150ms : 0ms; }
+            animate background { duration: App.motion ? Theme.duration-transition : 0ms; easing: ease; }
             Cover {
                 x: 8px;
                 width: 40px;
@@ -106,10 +111,14 @@ export component Navbar inherits TouchArea {
                 round: pin.round;
                 radius: Theme.radius-size-s;
             }
-            if !c: VerticalLayout {
+            // `Pin_show` 0,3 с и `Pin_hide` 0,15 с.
+            VerticalLayout {
                 x: 56px;
                 width: 92px;
                 alignment: center;
+                opacity: c ? 0 : 1;
+                animate opacity { duration: !App.motion ? 0ms : c ? 150ms : 300ms; easing: ease; }
+                visible: self.opacity > 0.01;
                 Text {
                     text: pin.title;
                     overflow: elide;
@@ -162,10 +171,14 @@ export component Navbar inherits TouchArea {
         mouse-cursor: MouseCursor.pointer;
         clicked => { App.account-open = !App.account-open; }
     }
-    if !c: Text {
+    // `NavbarDesktopUserWidget_animation_show/hide`.
+    Text {
+        opacity: c ? 0 : 1;
+        animate opacity { duration: !App.motion ? 0ms : c ? 150ms : 300ms; easing: ease; }
+        visible: self.opacity > 0.01;
         x: 69px;
         y: parent.height - 62px;
-        width: parent.width - self.x - 4px;
+        width: max(0px, parent.width - self.x - 4px);
         text: App.login;
         overflow: elide;
         font-size: Theme.font-size-label-m;

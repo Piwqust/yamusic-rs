@@ -15,7 +15,7 @@ component IdRow inherits Rectangle {
     height: 44px;
     border-radius: 12px;
     background: ta.has-hover || active ? #b4b8cc42 : transparent;
-    animate background { duration: App.motion ? 150ms : 0ms; }
+    animate background { duration: App.motion ? Theme.duration-transition : 0ms; easing: ease; }
     Image { x: 16px; width: 24px; height: 24px; source: icon; colorize: ink; }
     Text {
         x: 56px;
@@ -41,7 +41,7 @@ component PickRow inherits Rectangle {
     height: 48px;
     border-radius: 16px;
     background: selected || ta.has-hover ? #b4b8cc33 : transparent;
-    animate background { duration: App.motion ? 150ms : 0ms; }
+    animate background { duration: App.motion ? Theme.duration-transition : 0ms; easing: ease; }
     if code == "": Image { x: 20px; width: 24px; height: 24px; source: icon; colorize: ink; }
     if code != "": Text {
         x: 20px;
@@ -78,7 +78,7 @@ component Toggle inherits Rectangle {
         height: 16px;
         border-radius: 8px;
         background: on ? #000000 : Theme.dark ? #ffffff66 : #ffffffa3;
-        animate x { duration: App.motion ? 150ms : 0ms; }
+        animate x { duration: App.motion ? Theme.duration-transition : 0ms; easing: ease; }
     }
 }
 
